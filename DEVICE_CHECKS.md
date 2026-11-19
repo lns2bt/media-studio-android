@@ -36,6 +36,13 @@ Try a full original export, an MP4 video export and an MP3 audio export. Both ex
 
 ### Local converter checks
 
+**First public release feature set, Android 36 x86_64:** Fine trimming an 8-second
+WAV to 0:00.100–0:07.900 produced a 7.802-second file. Rename preserved the
+extension and Continue editing opened the renamed result. After a cache hit,
+reopening the original took 25 ms and reopening the export took 31 ms.
+The emulator's cold first open took 156 seconds; these are editor timings,
+not Pixel benchmarks.
+
 **0.2.0 acceptance, Android 36 x86_64:** Dragging the two markers selected
 0:00.855–0:05.136 of a video. Enabling Audio only selected MP3; the exported
 file had one MP3 stream, no video, and a duration of 4.281 seconds. A full
