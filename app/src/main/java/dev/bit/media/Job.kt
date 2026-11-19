@@ -6,11 +6,19 @@ import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class Info(val title: String, val duration: Int?, val video: Boolean, val audio: Boolean)
+data class Info(
+    val title: String, val duration: Int?, val video: Boolean, val audio: Boolean,
+    val uploader: String? = null, val thumbnail: String? = null,
+    val chapters: List<Chapter> = emptyList(), val formats: List<SourceFormat> = emptyList(),
+) {
+    val qualities: List<Int> get() = MediaMeta.qualities(formats)
+}
 enum class Mode { BOTH, VIDEO, AUDIO }
 data class JobSpec(
     val url: String, val info: Info, val mode: Mode, val convert: Boolean,
-    val start: Int, val end: Int?, val localTrim: Boolean = false
+    val start: Int, val end: Int?, val localTrim: Boolean = false,
+    /** Highest video height to select; null selects the best available. */
+    val height: Int? = null,
 )
 
 data class JobStatus(
@@ -19,6 +27,8 @@ data class JobStatus(
 )
 
 object Jobs {
+    /** True while the app is on screen, so finished exports need no audible alert. */
+    @Volatile var visible = false
     private val current = MutableStateFlow(JobStatus())
     val state = current.asStateFlow()
     private lateinit var history: SharedPreferences

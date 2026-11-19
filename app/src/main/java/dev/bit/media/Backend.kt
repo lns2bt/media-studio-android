@@ -13,12 +13,14 @@ import android.system.StructPollfd
 import android.webkit.MimeTypeMap
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.CancellationException
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToLong
 
@@ -157,19 +159,47 @@ class Backend(context: Context) {
         }
         var video = false
         var audio = false
+        val seconds = item.optDouble("duration").takeIf { it.isFinite() && it > 0 }
+        val variants = mutableListOf<SourceFormat>()
         fun track(f: JSONObject) {
             if (f.optBoolean("has_drm") || f.optString("protocol") == "mhtml") return
             // Generic HTTP extractors do not always report codecs. Unknown is
             // potentially available; ffprobe verifies the actual tracks later.
-            video = video || f.optString("vcodec") != "none"
-            audio = audio || f.optString("acodec") != "none"
+            val hasVideo = f.optString("vcodec") != "none"
+            val hasAudio = f.optString("acodec") != "none"
+            video = video || hasVideo
+            audio = audio || hasAudio
+            val bitrate = f.optDouble("tbr").takeIf { it.isFinite() && it > 0 }
+            val bytes = f.optLong("filesize").takeIf { it > 0 } ?: f.optLong("filesize_approx").takeIf { it > 0 }
+                ?: if (bitrate != null && seconds != null) (bitrate * 125 * seconds).toLong() else null
+            variants += SourceFormat(f.optInt("height").takeIf { it > 0 }, hasVideo, hasAudio, bytes)
         }
         val formats = item.optJSONArray("formats")
         if (formats == null) track(item)
         else for (i in 0 until formats.length()) formats.optJSONObject(i)?.let(::track)
         require(video || audio) { "No downloadable audio or video tracks were found." }
-        val duration = item.optDouble("duration").takeIf { it.isFinite() && it > 0 }?.let { ceil(it).toInt() }
-        Info(item.optString("title").ifBlank { "Media" }, duration, video, audio)
+        val duration = seconds?.let { ceil(it).toInt() }
+        Info(item.optString("title").ifBlank { "Media" }, duration, video, audio,
+            uploader = item.text("uploader") ?: item.text("channel"),
+            thumbnail = (item.text("thumbnail") ?: item.optJSONArray("thumbnails")?.let { list ->
+                (list.length() - 1 downTo 0).firstNotNullOfOrNull { list.optJSONObject(it)?.text("url") }
+            })?.takeIf { it.startsWith("https://") || it.startsWith("http://") },
+            chapters = chapters(item.optJSONArray("chapters"), duration),
+            formats = variants)
+    }
+
+    private fun JSONObject.text(key: String): String? = if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
+
+    private fun chapters(list: JSONArray?, duration: Int?): List<Chapter> {
+        if (list == null) return emptyList()
+        return (0 until list.length()).mapNotNull { i ->
+            val c = list.optJSONObject(i) ?: return@mapNotNull null
+            val start = c.optDouble("start_time").takeIf { it.isFinite() && it >= 0 } ?: return@mapNotNull null
+            val end = c.optDouble("end_time").takeIf { it.isFinite() } ?: return@mapNotNull null
+            val a = floor(start).toInt()
+            val b = ceil(end).toInt().let { if (duration != null) minOf(it, duration) else it }
+            if (b <= a) null else Chapter(c.text("title") ?: "Chapter ${i + 1}", a, b)
+        }
     }
 
     fun run(job: JobSpec, progress: (String, Int?) -> Unit): Uri = work { task, dir ->
@@ -182,9 +212,11 @@ class Backend(context: Context) {
             Mode.VIDEO -> "Downloading video"
             Mode.AUDIO -> "Downloading audio"
         }
+        // A quality cap falls back to the unrestricted choice when no variant fits it.
+        val cap = job.height?.let { "[height<=$it]" }
         val selector = when (job.mode) {
-            Mode.BOTH -> "bv+ba/b"
-            Mode.VIDEO -> "bv/b"
+            Mode.BOTH -> if (cap == null) "bv+ba/b" else "bv$cap+ba/b$cap/bv+ba/b"
+            Mode.VIDEO -> if (cap == null) "bv/b" else "bv$cap/b$cap/bv/b"
             Mode.AUDIO -> "ba/b"
         }
         val bounded = job.start != 0 || end != null && end != duration

@@ -15,6 +15,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.text.format.Formatter
+import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -26,6 +31,12 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -95,8 +106,20 @@ class MainActivity : ComponentActivity() {
         ViewModelProvider(this)[LocalConverterModel::class.java].open(uri)
     }
 
+    override fun onStart() {
+        super.onStart()
+        Jobs.visible = true
+    }
+
+    override fun onStop() {
+        Jobs.visible = false
+        super.onStop()
+    }
+
     private fun receive(intent: Intent, restoring: Boolean = false) {
         if (!restoring) pasteWhenFocused = false
+        if (intent.getBooleanExtra(DownloadService.FROM_RESULT, false))
+            getSystemService(android.app.NotificationManager::class.java).cancel(DownloadService.DONE_ID)
         when (intent.action) {
             "dev.bit.media.OPEN_CONVERTER" -> form.destination = Destination.Converter
             "dev.bit.media.PICK_FILE" -> {
@@ -165,6 +188,13 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
     var mode by mutableStateOf(Mode.BOTH)
     var convert by mutableStateOf(false)
     var localTrim by mutableStateOf(false)
+    /** Highest video height; null means the best available. */
+    var height by mutableStateOf<Int?>(null)
+    var thumbnail by mutableStateOf<ImageBitmap?>(null)
+        private set
+    /** Start offset read from the link itself, such as `?t=90`. */
+    var linkStart by mutableStateOf<Int?>(null)
+        private set
     private var endEdited = false
     private var generation = 0L
     private var request: Job? = null
@@ -179,12 +209,15 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
         if (url == value) return
         url = value
         info = null
-        from = "0:00"
+        thumbnail = null
+        linkStart = LinkTime.start(value)
+        from = linkStart?.let(FormTime::format) ?: "0:00"
         until = ""
         endEdited = false
         mode = Mode.BOTH
         convert = false
         localTrim = false
+        height = null
         inspect()
     }
 
@@ -203,6 +236,12 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
                 info = result
                 mode = Mode.values().firstOrNull { it.available(result) } ?: Mode.BOTH
                 if (!endEdited) until = result.duration?.let(FormTime::format).orEmpty()
+                result.thumbnail?.let { link ->
+                    launch {
+                        val image = withContext(Dispatchers.IO) { Thumbnails.load(link, 960) }
+                        if (generation == id && image != null) thumbnail = image.asImageBitmap()
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
@@ -215,12 +254,35 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
 
     internal val range get() = FormTime.range(from, until, info?.duration)
 
+    /** Selects a chapter, or the whole item for null. */
+    fun selectChapter(chapter: Chapter?) {
+        val duration = info?.duration
+        from = FormTime.format(chapter?.start ?: 0)
+        editEnd((chapter?.end ?: duration)?.let(FormTime::format).orEmpty())
+    }
+
+    fun isSelected(chapter: Chapter?): Boolean {
+        val bounds = range as? FormRange.Valid ?: return false
+        return if (chapter == null) bounds.start == 0 && bounds.end == null
+        else bounds.start == chapter.start && (bounds.end ?: info?.duration) == chapter.end
+    }
+
+    /** Approximate transfer size for the current choices, or null when unknown. */
+    fun estimate(): Long? {
+        val source = info ?: return null
+        val bounds = range as? FormRange.Valid ?: return null
+        val duration = source.duration
+        val fraction = if (localTrim || duration == null) 1.0
+            else ((bounds.end ?: duration) - bounds.start).toDouble() / duration
+        return MediaMeta.estimate(source.formats, mode, height.takeIf { mode != Mode.AUDIO }, fraction)
+    }
+
     fun spec(): JobSpec? {
         val source = info ?: return null
         val bounds = range as? FormRange.Valid ?: return null
         if (!mode.available(source)) return null
         return JobSpec(url.trim(), source, mode, convert, bounds.start, bounds.end,
-            localTrim && (bounds.start > 0 || bounds.end != null))
+            localTrim && (bounds.start > 0 || bounds.end != null), height.takeIf { mode != Mode.AUDIO })
     }
 }
 
@@ -302,6 +364,8 @@ private fun Extractor(context: Context, form: MediaForm) {
             })
         when {
             form.loading -> {
+                Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MaterialTheme.shapes.large)
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest))
                 Hint("Reading metadata…")
                 StudioProgress(null)
             }
@@ -310,8 +374,7 @@ private fun Extractor(context: Context, form: MediaForm) {
                 OutlinedButton(onClick = form::inspect) { Text("Retry") }
             }
             info != null -> {
-                Text(info.title, style = MaterialTheme.typography.titleLarge)
-                Hint("Duration: ${info.duration?.let(FormTime::format) ?: "Unknown"}")
+                SourceSummary(info, form.thumbnail)
                 if (!info.video && !info.audio) Text("No downloadable tracks found.")
             }
             form.url.isNotBlank() -> Text("Enter a complete HTTP or HTTPS link.")
@@ -326,6 +389,20 @@ private fun Extractor(context: Context, form: MediaForm) {
                 label = { Text("To") }, placeholder = { Text("Until the end") })
         }
         if (rangeError != null) Text(rangeError, color = MaterialTheme.colorScheme.error)
+        form.linkStart?.let { if (form.from == FormTime.format(it)) Hint("Start time taken from the link.") }
+        if (info != null && info.chapters.isNotEmpty()) {
+            Hint("Chapters")
+            ChipRow {
+                FilterChip(form.isSelected(null), { form.selectChapter(null) }, label = { Text("Full length") })
+                info.chapters.forEach { chapter ->
+                    FilterChip(form.isSelected(chapter), {
+                        form.selectChapter(chapter.takeUnless { form.isSelected(it) })
+                    }, modifier = Modifier.widthIn(max = 260.dp), label = {
+                        Text("${FormTime.format(chapter.start)}  ${chapter.title}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    })
+                }
+            }
+        }
         if (form.range.let { it is FormRange.Valid && (it.start > 0 || it.end != null) }) {
             Row(Modifier.fillMaxWidth().toggleable(form.localTrim, role = Role.Checkbox) { form.localTrim = it }
                 .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -342,12 +419,24 @@ private fun Extractor(context: Context, form: MediaForm) {
             listOf(Mode.BOTH to "Video with audio", Mode.VIDEO to "Video only", Mode.AUDIO to "Audio only")
                 .forEach { (mode, label) -> Choice(label, form.mode == mode, mode.available(info)) { form.mode = mode } }
         }
+        val qualities = info?.qualities.orEmpty()
+        if (form.mode != Mode.AUDIO && qualities.size > 1) {
+            HorizontalDivider()
+            Hint("Quality")
+            ChipRow {
+                FilterChip(form.height == null, { form.height = null }, label = { Text("Best · ${qualities.first()}p") })
+                qualities.drop(1).forEach { h ->
+                    FilterChip(form.height == h, { form.height = h }, label = { Text("${h}p") })
+                }
+            }
+        }
         HorizontalDivider()
         Hint("Format")
         Column(Modifier.selectableGroup()) {
             Choice("Keep original", !form.convert) { form.convert = false }
             Choice("Convert to ${if (form.mode == Mode.AUDIO) "MP3" else "MP4"}", form.convert) { form.convert = true }
         }
+        form.estimate()?.let { Hint("About ${Formatter.formatShortFileSize(context, it)} to download") }
         Button(modifier = Modifier.fillMaxWidth(), enabled = !status.running && form.spec() != null, onClick = {
             form.spec()?.let {
                 DownloadService.start(context, it)
@@ -357,6 +446,41 @@ private fun Extractor(context: Context, form: MediaForm) {
             }
         }) { Text("Start download") }
     }
+}
+
+@Composable
+private fun SourceSummary(info: Info, thumbnail: ImageBitmap?) {
+    if (info.thumbnail != null) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+            Crossfade(thumbnail, label = "Thumbnail") { image ->
+                if (image != null) Image(image, contentDescription = null, modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop)
+            }
+            info.duration?.let {
+                Surface(Modifier.align(Alignment.BottomEnd).padding(8.dp), shape = MaterialTheme.shapes.small,
+                    color = Color.Black.copy(alpha = 0.72f), contentColor = Color.White) {
+                    Text(FormTime.format(it), Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+    Text(info.title, style = MaterialTheme.typography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+    val tracks = when {
+        info.video && info.audio -> "Video and audio"
+        info.video -> "Video"
+        info.audio -> "Audio"
+        else -> null
+    }
+    Hint(listOfNotNull(info.uploader, info.duration?.let(FormTime::format) ?: "Unknown duration", tracks)
+        .joinToString("  •  "))
+}
+
+@Composable
+private fun ChipRow(content: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), content = content)
 }
 
 @Composable
