@@ -1,0 +1,12 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="paste_link" android:shortcutShortLabel="@string/shortcut_paste_link"
+        android:icon="@drawable/ic_shortcut_paste">
+        <intent android:action="dev.bit.media.PASTE_LINK" android:targetPackage="dev.bit.media"
+            android:targetClass="dev.bit.media.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="pick_file" android:shortcutShortLabel="@string/shortcut_pick_file"
+        android:icon="@drawable/ic_shortcut_file">
+        <intent android:action="dev.bit.media.PICK_FILE" android:targetPackage="dev.bit.media"
+            android:targetClass="dev.bit.media.MainActivity" />
+    </shortcut>
+</shortcuts>

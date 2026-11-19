@@ -1,0 +1,4 @@
+<resources>
+    <string name="shortcut_paste_link">Paste link</string>
+    <string name="shortcut_pick_file">Pick file</string>
+</resources>

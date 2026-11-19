@@ -1,0 +1,403 @@
+package dev.bit.media
+
+import android.app.Application
+import android.content.ClipboardManager
+import android.content.ContentResolver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Locale
+
+class MainActivity : ComponentActivity() {
+    private val form by lazy { ViewModelProvider(this)[MediaForm::class.java] }
+    private val picker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(::openMedia)
+    }
+    private var pasteWhenFocused = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        pasteWhenFocused = savedInstanceState?.getBoolean("pasteWhenFocused") == true
+        if (savedInstanceState == null || !form.initialized) receive(intent, savedInstanceState != null)
+        form.initialized = true
+        setContent {
+            StudioTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    MediaScreen(this, form, ::openMedia)
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        receive(intent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("pasteWhenFocused", pasteWhenFocused)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && pasteWhenFocused) {
+            pasteWhenFocused = false
+            pasteLink(form)
+        }
+    }
+
+    private fun openMedia(uri: Uri) {
+        if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
+            message("Choose a shared audio or video file.")
+            return
+        }
+        form.destination = Destination.Converter
+        form.scrollToOpenedFile = true
+        ViewModelProvider(this)[LocalConverterModel::class.java].open(uri)
+    }
+
+    private fun receive(intent: Intent, restoring: Boolean = false) {
+        if (!restoring) pasteWhenFocused = false
+        when (intent.action) {
+            "dev.bit.media.OPEN_CONVERTER" -> form.destination = Destination.Converter
+            "dev.bit.media.PICK_FILE" -> {
+                form.destination = Destination.Converter
+                if (!restoring) picker.launch(arrayOf("audio/*", "video/*"))
+            }
+            "dev.bit.media.PASTE_LINK" -> {
+                form.destination = Destination.Extractor
+                if (!restoring) {
+                    if (hasWindowFocus()) pasteLink(form) else pasteWhenFocused = true
+                }
+            }
+            Intent.ACTION_VIEW, Intent.ACTION_SEND -> {
+                if (intent.action == Intent.ACTION_SEND && intent.type?.substringBefore(';') == "text/plain") {
+                    form.destination = Destination.Extractor
+                    val link = firstLink(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty())
+                    if (link != null) form.editUrl(link) else message("No web link found in the shared text.")
+                } else {
+                    @Suppress("DEPRECATION")
+                    val uri = if (intent.action == Intent.ACTION_VIEW) intent.data else
+                        (intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri)
+                            ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+                    if (uri != null) openMedia(uri) else message("No media file found.")
+                }
+            }
+        }
+    }
+}
+
+private fun Context.pasteLink(form: MediaForm) {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    val item = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+    val link = firstLink((item?.text?.toString() ?: item?.uri?.toString()).orEmpty())
+    if (link != null) form.editUrl(link) else message("No web link found on the clipboard.")
+}
+
+private fun firstLink(text: String): String? =
+    Regex("""https?://[^\s<>"]+""", RegexOption.IGNORE_CASE).find(text)?.value
+
+private fun validLink(text: String): Boolean = runCatching {
+    val uri = java.net.URI(text)
+    uri.scheme.lowercase(Locale.ROOT) in setOf("http", "https") && !uri.host.isNullOrBlank()
+}.getOrDefault(false)
+
+private fun Mode.available(info: Info?): Boolean = when (this) {
+    Mode.BOTH -> info?.video == true && info.audio
+    Mode.VIDEO -> info?.video == true
+    Mode.AUDIO -> info?.audio == true
+}
+
+class MediaForm(application: Application) : AndroidViewModel(application) {
+    internal var destination by mutableStateOf(Destination.Extractor)
+    internal var scrollToOpenedFile by mutableStateOf(false)
+    var initialized = false
+    var url by mutableStateOf("")
+        private set
+    var info by mutableStateOf<Info?>(null)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+    var loading by mutableStateOf(false)
+        private set
+    var from by mutableStateOf("0:00")
+    var until by mutableStateOf("")
+        private set
+    var mode by mutableStateOf(Mode.BOTH)
+    var convert by mutableStateOf(false)
+    var localTrim by mutableStateOf(false)
+    private var endEdited = false
+    private var generation = 0L
+    private var request: Job? = null
+    private val backend by lazy { Backend(getApplication<Application>()) }
+
+    fun editEnd(value: String) {
+        endEdited = true
+        until = value
+    }
+
+    fun editUrl(value: String) {
+        if (url == value) return
+        url = value
+        info = null
+        from = "0:00"
+        until = ""
+        endEdited = false
+        mode = Mode.BOTH
+        convert = false
+        localTrim = false
+        inspect()
+    }
+
+    fun inspect() {
+        val id = ++generation
+        request?.cancel()
+        val link = url.trim()
+        error = null
+        loading = validLink(link)
+        if (!loading) return
+        request = viewModelScope.launch {
+            try {
+                delay(450)
+                val result = withContext(Dispatchers.IO) { backend.inspect(link) }
+                if (generation != id) return@launch
+                info = result
+                mode = Mode.values().firstOrNull { it.available(result) } ?: Mode.BOTH
+                if (!endEdited) until = result.duration?.let(FormTime::format).orEmpty()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (generation == id) error = e.localizedMessage ?: "Could not read this link."
+            } finally {
+                if (generation == id) loading = false
+            }
+        }
+    }
+
+    internal val range get() = FormTime.range(from, until, info?.duration)
+
+    fun spec(): JobSpec? {
+        val source = info ?: return null
+        val bounds = range as? FormRange.Valid ?: return null
+        if (!mode.available(source)) return null
+        return JobSpec(url.trim(), source, mode, convert, bounds.start, bounds.end,
+            localTrim && (bounds.start > 0 || bounds.end != null))
+    }
+}
+
+@Composable
+private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit) {
+    val holder = rememberSaveableStateHolder()
+    val current = form.destination
+    val job by Jobs.state.collectAsStateWithLifecycle()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val rail = maxWidth >= 600.dp && maxHeight >= 480.dp
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
+            Row(Modifier.weight(1f)) {
+                if (rail) NavigationRail(windowInsets = WindowInsets(0)) {
+                    Spacer(Modifier.height(16.dp))
+                    Destination.entries.forEach { item ->
+                        NavigationRailItem(selected = item == current, onClick = { form.destination = item },
+                            icon = { DestinationIcon(item) }, label = { Text(item.name) })
+                    }
+                }
+                holder.SaveableStateProvider(current.name) {
+                    val scroll = rememberScrollState()
+                    LaunchedEffect(current, form.scrollToOpenedFile) {
+                        if (current == Destination.Converter && form.scrollToOpenedFile) {
+                            scroll.scrollTo(0)
+                            form.scrollToOpenedFile = false
+                        }
+                    }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        Column(Modifier.widthIn(max = 720.dp).fillMaxSize()
+                             .verticalScroll(scroll).padding(horizontal = if (rail) 32.dp else 16.dp)
+                            .padding(top = 24.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Media Studio", style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary)
+                                Text(current.name, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineLarge)
+                                Hint(if (current == Destination.Extractor) "Save video or audio from a link."
+                                    else "Change the format of a file on your device.")
+                            }
+                            if (current == Destination.Extractor) Extractor(context, form) else LocalConverter()
+                            if (!job.running) JobPanel(context, onEdit)
+                        }
+                    }
+                }
+            }
+            if (job.running) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(job.stage, Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                                style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            job.percent?.let { Text("$it%", style = MaterialTheme.typography.labelLarge) }
+                            TextButton(onClick = { DownloadService.cancel(context) }) { Text("Cancel") }
+                        }
+                        StudioProgress(job.percent)
+                    }
+                }
+            }
+            if (!rail) NavigationBar(windowInsets = WindowInsets(0)) {
+                Destination.entries.forEach { item ->
+                    NavigationBarItem(selected = item == current, onClick = { form.destination = item },
+                        icon = { DestinationIcon(item) }, label = { Text(item.name) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Extractor(context: Context, form: MediaForm) {
+    val status by Jobs.state.collectAsStateWithLifecycle()
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val info = form.info
+    val rangeError = (form.range as? FormRange.Invalid)?.message
+    StudioSection("Source") {
+        OutlinedTextField(form.url, form::editUrl, Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text("Media link") }, placeholder = { Text("https://…") },
+            trailingIcon = {
+                TextButton(onClick = { context.pasteLink(form) }) { Text("Paste") }
+            })
+        when {
+            form.loading -> {
+                Hint("Reading metadata…")
+                StudioProgress(null)
+            }
+            form.error != null -> {
+                Text("Could not read metadata: ${form.error}", color = MaterialTheme.colorScheme.error)
+                OutlinedButton(onClick = form::inspect) { Text("Retry") }
+            }
+            info != null -> {
+                Text(info.title, style = MaterialTheme.typography.titleLarge)
+                Hint("Duration: ${info.duration?.let(FormTime::format) ?: "Unknown"}")
+                if (!info.video && !info.audio) Text("No downloadable tracks found.")
+            }
+            form.url.isNotBlank() -> Text("Enter a complete HTTP or HTTPS link.")
+            else -> Hint("You can also share a link directly to Media Studio.")
+        }
+    }
+    StudioSection("Time range") {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(form.from, { form.from = it }, Modifier.weight(1f), singleLine = true,
+                label = { Text("From") })
+            OutlinedTextField(form.until, form::editEnd, Modifier.weight(1f), singleLine = true,
+                label = { Text("To") }, placeholder = { Text("Until the end") })
+        }
+        if (rangeError != null) Text(rangeError, color = MaterialTheme.colorScheme.error)
+        if (form.range.let { it is FormRange.Valid && (it.start > 0 || it.end != null) }) {
+            Row(Modifier.fillMaxWidth().toggleable(form.localTrim, role = Role.Checkbox) { form.localTrim = it }
+                .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(form.localTrim, onCheckedChange = null)
+                Spacer(Modifier.width(12.dp))
+                Text("Download full source and trim locally")
+            }
+        }
+        if (!form.convert && form.mode != Mode.AUDIO) Hint("Original video cuts may start at a nearby keyframe.")
+    }
+    StudioSection("Output") {
+        Hint("Tracks")
+        Column(Modifier.selectableGroup()) {
+            listOf(Mode.BOTH to "Video with audio", Mode.VIDEO to "Video only", Mode.AUDIO to "Audio only")
+                .forEach { (mode, label) -> Choice(label, form.mode == mode, mode.available(info)) { form.mode = mode } }
+        }
+        HorizontalDivider()
+        Hint("Format")
+        Column(Modifier.selectableGroup()) {
+            Choice("Keep original", !form.convert) { form.convert = false }
+            Choice("Convert to ${if (form.mode == Mode.AUDIO) "MP3" else "MP4"}", form.convert) { form.convert = true }
+        }
+        Button(modifier = Modifier.fillMaxWidth(), enabled = !status.running && form.spec() != null, onClick = {
+            form.spec()?.let {
+                DownloadService.start(context, it)
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }) { Text("Start download") }
+    }
+}
+
+@Composable
+private fun JobPanel(context: Context, onEdit: (Uri) -> Unit) {
+    val status by Jobs.state.collectAsStateWithLifecycle()
+    StudioSection("Activity") {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(status.stage.ifBlank { "Ready" }, Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+                style = MaterialTheme.typography.bodyLarge)
+            if (status.running) status.percent?.let { Text("${it.coerceIn(0, 100)}%", style = MaterialTheme.typography.titleMedium) }
+        }
+        if (status.running) {
+            StudioProgress(status.percent)
+            OutlinedButton(onClick = { DownloadService.cancel(context) }) { Text("Cancel") }
+        }
+        status.uri?.let { uri -> ExportResultCard(context, uri, onEdit) }
+    }
+}
+
+@Composable
+internal fun StudioSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.extraLarge) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun Hint(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium,
+    color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+@Composable
+private fun Choice(label: String, selected: Boolean, enabled: Boolean = true, click: () -> Unit) {
+    Row(Modifier.fillMaxWidth().selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = click).heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected, onClick = null, enabled = enabled)
+        Spacer(Modifier.width(10.dp))
+        Text(label, color = LocalContentColor.current.copy(alpha = if (enabled) 1f else 0.5f))
+    }
+}
+
+private fun Context.message(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()

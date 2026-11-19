@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.MediaStudio" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#101411</item>
+        <item name="android:colorAccent">#99D6BF</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
