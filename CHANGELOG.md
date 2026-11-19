@@ -1,18 +1,20 @@
 # Releases
 
-## v0.2
+## v0.2 — Share sheet, notifications and richer links
 
-Android's internal version code is now 7.
+Android's internal version code is now 7, so v0.1 installations update in place.
 
-- Rename the export where the title is shown, in Extractor and Converter. A preview shows the file name the export will get; a custom name replaces the automatic time-range label.
-- Clear Extractor or Converter with one tap (✕ in the link field, **Reset** next to the file). A snackbar offers **Undo**. A running download continues; cancel it separately.
-- The bottom of the page shows the app, yt-dlp and FFmpeg versions; tap it to open the releases page.
 - Sharing a link opens a quick sheet over the sending app: tap **Audio** (MP3) or **Video** (up to 1080p) to download without leaving it, or **More options…** for the full Extractor. The last choice is remembered.
 - A finished export posts a notification with **Open**, **Share** and **Edit**. A failed link export offers **Retry**. While the app is on screen, these notifications stay silent.
 - Extractor shows the thumbnail, channel and duration of a link, plus its chapters as one-tap time ranges.
 - Choose a maximum video quality, and see an estimated download size before starting.
 - A start time in the link (`?t=90`, `&t=1m30s`, `#t=1:30`) prefills **From**.
+- Rename the export where the title is shown, in Extractor and Converter. A preview shows the file name the export will get; a custom name replaces the automatic time-range label.
+- Clear Extractor or Converter with one tap (✕ in the link field, **Reset** next to the file). A snackbar offers **Undo**. A running download continues; cancel it separately.
 - Progress notifications use the app's own icon and show the link's thumbnail.
+- The bottom of the page shows the app, yt-dlp and FFmpeg versions; tap it to open the releases page.
+
+**Artifact:** ARM64 debug APK, Android 10+. The release also includes its SHA-256 checksum.
 
 ## v0.1 — First public release
 
