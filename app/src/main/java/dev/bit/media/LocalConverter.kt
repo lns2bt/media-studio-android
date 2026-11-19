@@ -49,6 +49,8 @@ class LocalConverterModel(application: Application) : AndroidViewModel(applicati
         private set
     var format by mutableStateOf(LocalFormat.ORIGINAL)
         private set
+    /** File name chosen by the user; null derives it from the title. */
+    var name by mutableStateOf<String?>(null)
     private var backend: Backend? = null
     private var request: Job? = null
     private var generation = 0L
@@ -61,6 +63,7 @@ class LocalConverterModel(application: Application) : AndroidViewModel(applicati
         backend = reader
         uri = source
         info = null
+        name = null
         wave = emptyList()
         loading = true
         error = null
@@ -133,11 +136,78 @@ class LocalConverterModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    internal class Snapshot(
+        val uri: Uri?, val info: LocalInfo?, val wave: List<Float>, val loading: Boolean, val error: String?,
+        val start: Long, val end: Long, val from: String, val until: String, val audioOnly: Boolean,
+        val format: LocalFormat, val name: String?,
+    )
+
+    /** Closes the file and clears the editor. A running export is not affected. */
+    internal fun reset(): Snapshot {
+        val saved = Snapshot(uri, info, wave, loading, error, start, end, from, until, audioOnly, format, name)
+        ++generation
+        request?.cancel()
+        backend?.cancel()
+        backend = null
+        uri = null
+        info = null
+        wave = emptyList()
+        loading = false
+        error = null
+        start = 0
+        end = 0
+        from = ""
+        until = ""
+        audioOnly = false
+        format = LocalFormat.ORIGINAL
+        name = null
+        return saved
+    }
+
+    internal fun restore(saved: Snapshot) {
+        val source = saved.uri ?: return
+        // An interrupted scan is simply repeated; the waveform cache makes this quick.
+        if (saved.loading || saved.info == null) {
+            open(source)
+            return
+        }
+        ++generation
+        request?.cancel()
+        uri = source
+        info = saved.info
+        wave = saved.wave
+        loading = false
+        error = saved.error
+        start = saved.start
+        end = saved.end
+        from = saved.from
+        until = saved.until
+        audioOnly = saved.audioOnly
+        format = saved.format
+        name = saved.name
+    }
+
+    /** The file name the next export receives; the extension is known unless the original is kept. */
+    fun preview(): String? {
+        val media = info ?: return null
+        val clipped = rangeError == null && (start != 0L || end != media.durationMs)
+        val ext = when (format) {
+            LocalFormat.ORIGINAL -> ""
+            LocalFormat.MP3 -> ".mp3"
+            LocalFormat.AAC -> ".m4a"
+            LocalFormat.OPUS -> ".opus"
+            LocalFormat.FLAC -> ".flac"
+            LocalFormat.H264 -> ".mp4"
+            LocalFormat.VP9 -> ".webm"
+        }
+        return ExportName.base(media.title, name, if (clipped) clipLabel(start, end) else "") + ext
+    }
+
     fun job(): LocalJob? {
         val source = uri ?: return null
         val media = info ?: return null
         if (rangeError != null) return null
-        return LocalJob(source, media, start, end, format, audioOnly)
+        return LocalJob(source, media, start, end, format, audioOnly, name)
     }
 
     override fun onCleared() {
@@ -157,16 +227,36 @@ fun LocalConverter() {
         if (uri != null) model.open(uri)
     }
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val undo = LocalUndo.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val info = model.info
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(info?.title ?: "Source file", style = MaterialTheme.typography.titleMedium)
-                Text(if (info == null) "Choose an audio or video file to trim or convert."
-                    else "${if (info.video) "Video" else "Audio"}  •  ${LocalTime.format(info.durationMs)}",
-                    style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(onClick = { picker.launch(arrayOf("audio/*", "video/*")) }) {
-                    Text(if (model.uri == null) "Choose file" else "Change file")
+                if (info == null) {
+                    Text("Source file", style = MaterialTheme.typography.titleMedium)
+                    Text("Choose an audio or video file to trim or convert.", style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text("${if (info.video) "Video" else "Audio"}  •  ${LocalTime.format(info.durationMs)}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    EditableTitle(info.title, model.name, model.preview().orEmpty(),
+                        MaterialTheme.typography.titleMedium) { model.name = it }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { picker.launch(arrayOf("audio/*", "video/*")) }) {
+                        Text(if (model.uri == null) "Choose file" else "Change file")
+                    }
+                    if (model.uri != null) TextButton(onClick = {
+                        val saved = model.reset()
+                        val result = Jobs.dismissResult()
+                        undo.offer("Converter cleared") {
+                            model.restore(saved)
+                            result?.let(Jobs::restoreResult)
+                        }
+                    }) {
+                        Icon(CloseSymbol, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reset")
+                    }
                 }
                 if (model.loading) {
                     StudioProgress(null)

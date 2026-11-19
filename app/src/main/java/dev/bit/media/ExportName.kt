@@ -8,6 +8,16 @@ internal data class ExportName(val base: String, val suffix: String) {
                 ExportName(displayName.substring(0, dot), displayName.substring(dot))
             else ExportName(displayName, "")
         }
+
+        /**
+         * The base name of a new export. A custom [name] is used as typed (minus characters
+         * Android rejects) and replaces the automatic range label; a source title is shortened.
+         */
+        fun base(title: String, name: String?, range: String): String {
+            val clean = { text: String -> text.replace(Regex("""[\p{Cntrl}/\\:*?"<>|]"""), "_").trim(' ', '.') }
+            if (name != null) return clean(name).ifBlank { "Media" }
+            return clean(title).take(55).trimEnd { it.isHighSurrogate() }.ifBlank { "Media" } + range
+        }
     }
 
     fun problem(input: String): String? = when {

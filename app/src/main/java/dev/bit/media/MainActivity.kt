@@ -156,7 +156,7 @@ private fun Context.pasteLink(form: MediaForm) {
     if (link != null) form.editUrl(link) else message("No web link found on the clipboard.")
 }
 
-private fun firstLink(text: String): String? =
+internal fun firstLink(text: String): String? =
     Regex("""https?://[^\s<>"]+""", RegexOption.IGNORE_CASE).find(text)?.value
 
 private fun validLink(text: String): Boolean = runCatching {
@@ -164,7 +164,7 @@ private fun validLink(text: String): Boolean = runCatching {
     uri.scheme.lowercase(Locale.ROOT) in setOf("http", "https") && !uri.host.isNullOrBlank()
 }.getOrDefault(false)
 
-private fun Mode.available(info: Info?): Boolean = when (this) {
+internal fun Mode.available(info: Info?): Boolean = when (this) {
     Mode.BOTH -> info?.video == true && info.audio
     Mode.VIDEO -> info?.video == true
     Mode.AUDIO -> info?.audio == true
@@ -195,6 +195,8 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
     /** Start offset read from the link itself, such as `?t=90`. */
     var linkStart by mutableStateOf<Int?>(null)
         private set
+    /** File name chosen by the user; null derives it from the title. */
+    var name by mutableStateOf<String?>(null)
     private var endEdited = false
     private var generation = 0L
     private var request: Job? = null
@@ -218,6 +220,7 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
         convert = false
         localTrim = false
         height = null
+        name = null
         inspect()
     }
 
@@ -254,6 +257,66 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
 
     internal val range get() = FormTime.range(from, until, info?.duration)
 
+    internal class Snapshot(
+        val url: String, val info: Info?, val thumbnail: ImageBitmap?, val error: String?, val loading: Boolean,
+        val from: String, val until: String, val endEdited: Boolean, val mode: Mode, val convert: Boolean,
+        val localTrim: Boolean, val height: Int?, val name: String?, val linkStart: Int?,
+    )
+
+    /** Clears the form. A running download is not affected. Returns the state for [restore]. */
+    internal fun reset(): Snapshot {
+        val saved = Snapshot(url, info, thumbnail, error, loading, from, until, endEdited, mode, convert,
+            localTrim, height, name, linkStart)
+        ++generation
+        request?.cancel()
+        url = ""
+        info = null
+        thumbnail = null
+        error = null
+        loading = false
+        from = "0:00"
+        until = ""
+        endEdited = false
+        mode = Mode.BOTH
+        convert = false
+        localTrim = false
+        height = null
+        name = null
+        linkStart = null
+        return saved
+    }
+
+    internal fun restore(saved: Snapshot) {
+        ++generation
+        request?.cancel()
+        url = saved.url
+        info = saved.info
+        thumbnail = saved.thumbnail
+        error = saved.error
+        loading = false
+        from = saved.from
+        until = saved.until
+        endEdited = saved.endEdited
+        mode = saved.mode
+        convert = saved.convert
+        localTrim = saved.localTrim
+        height = saved.height
+        name = saved.name
+        linkStart = saved.linkStart
+        // Metadata that was still loading is fetched again.
+        if (saved.loading || (saved.info == null && saved.error == null)) inspect()
+    }
+
+    /** The file name the next export receives; the extension is known only for conversions. */
+    fun preview(): String? {
+        val source = info ?: return null
+        val bounds = range as? FormRange.Valid
+        val range = if (bounds != null && (bounds.start > 0 || bounds.end != null))
+            clipLabel(bounds.start * 1000L, (bounds.end ?: source.duration)?.times(1000L)) else ""
+        val ext = if (!convert) "" else if (mode == Mode.AUDIO) ".mp3" else ".mp4"
+        return ExportName.base(source.title, name, range) + ext
+    }
+
     /** Selects a chapter, or the whole item for null. */
     fun selectChapter(chapter: Chapter?) {
         val duration = info?.duration
@@ -282,7 +345,7 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
         val bounds = range as? FormRange.Valid ?: return null
         if (!mode.available(source)) return null
         return JobSpec(url.trim(), source, mode, convert, bounds.start, bounds.end,
-            localTrim && (bounds.start > 0 || bounds.end != null), height.takeIf { mode != Mode.AUDIO })
+            localTrim && (bounds.start > 0 || bounds.end != null), height.takeIf { mode != Mode.AUDIO }, name)
     }
 }
 
@@ -291,6 +354,10 @@ private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit
     val holder = rememberSaveableStateHolder()
     val current = form.destination
     val job by Jobs.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undo = remember(snackbar, scope) { UndoHost(snackbar, scope) }
+    CompositionLocalProvider(LocalUndo provides undo) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val rail = maxWidth >= 600.dp && maxHeight >= 480.dp
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
@@ -323,10 +390,12 @@ private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit
                             }
                             if (current == Destination.Extractor) Extractor(context, form) else LocalConverter()
                             if (!job.running) JobPanel(context, onEdit)
+                            VersionFooter()
                         }
                     }
                 }
             }
+            SnackbarHost(snackbar)
             if (job.running) {
                 Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
@@ -348,6 +417,7 @@ private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit
             }
         }
     }
+    }
 }
 
 @Composable
@@ -356,11 +426,20 @@ private fun Extractor(context: Context, form: MediaForm) {
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val info = form.info
     val rangeError = (form.range as? FormRange.Invalid)?.message
+    val undo = LocalUndo.current
     StudioSection("Source") {
         OutlinedTextField(form.url, form::editUrl, Modifier.fillMaxWidth(), singleLine = true,
             label = { Text("Media link") }, placeholder = { Text("https://…") },
             trailingIcon = {
-                TextButton(onClick = { context.pasteLink(form) }) { Text("Paste") }
+                if (form.url.isEmpty()) TextButton(onClick = { context.pasteLink(form) }) { Text("Paste") }
+                else IconButton(onClick = {
+                    val saved = form.reset()
+                    val result = Jobs.dismissResult()
+                    undo.offer("Extractor cleared") {
+                        form.restore(saved)
+                        result?.let(Jobs::restoreResult)
+                    }
+                }) { Icon(CloseSymbol, contentDescription = "Clear link and reset Extractor") }
             })
         when {
             form.loading -> {
@@ -374,7 +453,7 @@ private fun Extractor(context: Context, form: MediaForm) {
                 OutlinedButton(onClick = form::inspect) { Text("Retry") }
             }
             info != null -> {
-                SourceSummary(info, form.thumbnail)
+                SourceSummary(form, info, form.thumbnail)
                 if (!info.video && !info.audio) Text("No downloadable tracks found.")
             }
             form.url.isNotBlank() -> Text("Enter a complete HTTP or HTTPS link.")
@@ -449,7 +528,7 @@ private fun Extractor(context: Context, form: MediaForm) {
 }
 
 @Composable
-private fun SourceSummary(info: Info, thumbnail: ImageBitmap?) {
+private fun SourceSummary(form: MediaForm, info: Info, thumbnail: ImageBitmap?) {
     if (info.thumbnail != null) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
@@ -466,7 +545,7 @@ private fun SourceSummary(info: Info, thumbnail: ImageBitmap?) {
             }
         }
     }
-    Text(info.title, style = MaterialTheme.typography.titleLarge, maxLines = 3, overflow = TextOverflow.Ellipsis)
+    EditableTitle(info.title, form.name, form.preview().orEmpty(), MaterialTheme.typography.titleLarge) { form.name = it }
     val tracks = when {
         info.video && info.audio -> "Video and audio"
         info.video -> "Video"
@@ -511,7 +590,7 @@ internal fun StudioSection(title: String, content: @Composable ColumnScope.() ->
 }
 
 @Composable
-private fun Hint(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium,
+internal fun Hint(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium,
     color = MaterialTheme.colorScheme.onSurfaceVariant)
 
 @Composable

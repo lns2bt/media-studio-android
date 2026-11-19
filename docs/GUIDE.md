@@ -4,7 +4,7 @@ A two-part media toolbox for the Pixel 8a: **Extractor** saves media from shared
 
 ## Extractor
 
-1. Share a media link as text to **Media Studio**, or paste the URL into Extractor.
+1. Share a media link as text to **Media Studio**. A sheet opens over the app you shared from and shows the item's thumbnail, title and duration. Tap **Audio** (MP3) or **Video** (original format, up to 1080p) to start right away; the sheet closes and a notification reports the saved file. Your last choice is highlighted next time. Tap **More options…** for the steps below, or paste the URL into Extractor directly.
 2. Check the title and duration. Keep the prefilled bounds for the whole item, or edit the start and end times. For example, `0:30` to `1:00` saves about 30 seconds.
 3. Choose video with audio, video only, or audio only. Keep the original format to avoid re-encoding. Choose MP4 for a compatible video file or MP3 for an audio file.
 4. Start the download. The current stage distinguishes transferring data from processing it locally. When it finishes, open or share the file from Downloads.
@@ -24,6 +24,12 @@ Source formats and stream layouts vary. A section download can still transfer mo
 - Tap a trim boundary to refine it. Step the selection in tenths of a second and audition just the start or the end of the clip.
 - After an export, rename the file in Downloads, share it, or choose **Continue editing** to open the result as a new converter source. Excerpts include their selected time range in the suggested filename.
 - Long-press the app icon for shortcuts to paste a link or pick a local file.
+
+### Naming, resetting and versions
+
+- Tap the pencil next to the title in Extractor or Converter to choose the file name before exporting. **Saves as** shows the resulting name; a custom name replaces the automatic time-range label. The extension is added when saving.
+- Tap ✕ in the link field (Extractor) or **Reset** next to the file (Converter) to start over. The snackbar offers **Undo**. A running export continues; use its own **Cancel** button to stop it.
+- The bottom of the page shows the app, yt-dlp and FFmpeg versions. Tap it to open the releases page.
 
 Media Studio keeps a bounded cache of waveform peaks for recently opened, identifiable files. It reads the current file descriptor and matches the file's identity, size and timestamps before reusing the peaks. Streaming providers without a stable identity are scanned on each open. For device timing, use `adb logcat -s StudioWave:D` to compare an initial open with a repeat; messages include elapsed times, not filenames.
 

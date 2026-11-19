@@ -19,6 +19,8 @@ data class JobSpec(
     val start: Int, val end: Int?, val localTrim: Boolean = false,
     /** Highest video height to select; null selects the best available. */
     val height: Int? = null,
+    /** File name chosen by the user, without extension; null derives it from the title. */
+    val name: String? = null,
 )
 
 data class JobStatus(
@@ -43,6 +45,18 @@ object Jobs {
                 uri = store.getString("uri", null)?.let(Uri::parse)
             )
         }
+    }
+
+    /** Hides a finished result (the file stays in Downloads). Returns it for undo, or null. */
+    internal fun dismissResult(): JobStatus? {
+        val previous = current.value
+        if (previous.running || (previous.uri == null && previous.stage == "Ready")) return null
+        report(JobStatus())
+        return previous
+    }
+
+    internal fun restoreResult(status: JobStatus) {
+        if (!current.value.running) report(status)
     }
 
     internal fun report(status: JobStatus) {

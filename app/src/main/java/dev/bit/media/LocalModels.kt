@@ -11,6 +11,8 @@ data class LocalJob(
     val endMs: Long,
     val format: LocalFormat,
     val audioOnly: Boolean,
+    /** File name chosen by the user, without extension; null derives it from the title. */
+    val name: String? = null,
 )
 
 enum class LocalFormat { ORIGINAL, MP3, AAC, OPUS, FLAC, H264, VP9 }

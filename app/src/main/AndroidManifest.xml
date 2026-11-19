@@ -15,7 +15,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
                 <data android:mimeType="audio/*" />
                 <data android:mimeType="video/*" />
             </intent-filter>
@@ -27,6 +26,15 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+        <!-- Shared links open a quick sheet over the sending app; "More options" hands off to MainActivity. -->
+        <activity android:name=".ShareActivity" android:exported="true" android:label="Media Studio"
+            android:theme="@style/Theme.MediaStudio.Sheet" android:excludeFromRecents="true" android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync|mediaProcessing" />
     </application>

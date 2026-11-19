@@ -33,3 +33,19 @@ class ExportNameTest {
         assertNull(name.problem("Live mix – take 2"))
     }
 }
+
+class ExportBaseTest {
+    @org.junit.Test fun titleIsShortenedAndKeepsRangeLabel() {
+        val long = "A".repeat(80)
+        org.junit.Assert.assertEquals("A".repeat(55) + " · 00m30s–01m00s",
+            ExportName.base(long, null, clipLabel(30_000, 60_000)))
+        org.junit.Assert.assertEquals("Song_ Live", ExportName.base("Song: Live", null, ""))
+        org.junit.Assert.assertEquals("Media", ExportName.base(" .. ", null, ""))
+    }
+
+    @org.junit.Test fun customNameReplacesTitleAndRange() {
+        val long = "B".repeat(80)
+        org.junit.Assert.assertEquals(long, ExportName.base("Title", long, clipLabel(30_000, 60_000)))
+        org.junit.Assert.assertEquals("My clip", ExportName.base("Title", " My clip ", " · 00m30s–end"))
+    }
+}

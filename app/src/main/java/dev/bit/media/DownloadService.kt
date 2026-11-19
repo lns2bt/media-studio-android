@@ -43,6 +43,7 @@ class DownloadService : Service() {
                 putExtra("format", job.format.name)
                 putExtra("startMs", job.startMs)
                 putExtra("endMs", job.endMs)
+                putExtra("name", job.name)
             })
         }
         fun start(context: Context, job: JobSpec) {
@@ -59,6 +60,7 @@ class DownloadService : Service() {
                 putExtra("end", job.end ?: -1)
                 putExtra("height", job.height ?: -1)
                 putExtra("thumbnail", job.info.thumbnail)
+                putExtra("name", job.name)
             })
         }
         fun cancel(context: Context) {
@@ -115,13 +117,15 @@ class DownloadService : Service() {
             LocalJob(uri, LocalInfo(title, intent.getLongExtra("durationMs", 0),
                 intent.getBooleanExtra("video", false), intent.getBooleanExtra("audio", false)),
                 intent.getLongExtra("startMs", 0), intent.getLongExtra("endMs", 0),
-                LocalFormat.valueOf(requireNotNull(intent.getStringExtra("format"))), intent.getBooleanExtra("audioOnly", false))
+                LocalFormat.valueOf(requireNotNull(intent.getStringExtra("format"))), intent.getBooleanExtra("audioOnly", false),
+                intent.getStringExtra("name"))
         }
         val job = intent.getStringExtra("url")?.let { url -> JobSpec(url, Info(title, intent.getIntExtra("duration", -1).takeIf { it >= 0 },
             intent.getBooleanExtra("video", false), intent.getBooleanExtra("audio", false)),
             Mode.valueOf(requireNotNull(intent.getStringExtra("mode"))), intent.getBooleanExtra("convert", false),
             intent.getIntExtra("start", 0), intent.getIntExtra("end", -1).takeIf { it >= 0 },
-            intent.getBooleanExtra("localTrim", false), intent.getIntExtra("height", -1).takeIf { it > 0 }) }
+            intent.getBooleanExtra("localTrim", false), intent.getIntExtra("height", -1).takeIf { it > 0 },
+            intent.getStringExtra("name")) }
         if (job == null && local == null) { stopSelf(); return START_NOT_STICKY }
         localExport = local != null
         // Local sources hold a temporary read grant, so only link exports can be retried from a notification.

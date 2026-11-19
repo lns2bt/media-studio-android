@@ -135,6 +135,24 @@ class Backend(context: Context) {
         }
     }
 
+    /** Versions of the bundled yt-dlp and FFmpeg, each null when it cannot be read. */
+    fun versions(): Pair<String?, String?> = work { task, dir ->
+        var yt: String? = null
+        var ff: String? = null
+        runCatching {
+            command(task, dir, listOf(python, File(File(base, YoutubeDL.ytdlpDirName), YoutubeDL.ytdlpBin).path, "--version")) {
+                if (yt == null && it.isNotBlank()) yt = it.trim()
+            }
+        }
+        runCatching {
+            command(task, dir, listOf(File(bin, "libffmpeg.so").path, "-version")) { line ->
+                if (ff == null && line.startsWith("ffmpeg version ")) ff = line.split(' ').getOrNull(2)
+                    ?.let { if (it.length > 1 && it[0] == 'n' && it[1].isDigit()) it.drop(1) else it }
+            }
+        }
+        yt to ff
+    }
+
     private fun ytArgs(url: String, options: List<String>): List<String> {
         val uri = Uri.parse(url)
         require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) { "Enter an HTTP or HTTPS media link." }
@@ -252,8 +270,8 @@ class Backend(context: Context) {
         val input = dir.listFiles()?.singleOrNull { it.isFile && it.name.startsWith("source.") }
             ?: throw IOException("No single downloadable media file was produced.")
         val output = process(task, dir, input, job, progress)
-        publish(task, output, job.info.title, job.mode == Mode.AUDIO, progress,
-            range = if (bounded) clipLabel(job.start * 1000L, (end ?: duration)?.times(1000L)) else "")
+        publish(task, output, ExportName.base(job.info.title, job.name,
+            if (bounded) clipLabel(job.start * 1000L, (end ?: duration)?.times(1000L)) else ""), job.mode == Mode.AUDIO, progress)
     }
 
     // SAF providers can expose slices or non-seekable pipes. Stage once per operation
@@ -425,7 +443,7 @@ class Backend(context: Context) {
         val sourceExt = if (format == LocalFormat.ORIGINAL) originalExtension(tracks, localName(task, job.uri)) else null
         val keepContainer = video != null || tracks.video == null
         if (!clipped && keepContainer && sourceExt != null) {
-            return@work publish(task, input, job.info.title, video == null, progress, sourceExt)
+            return@work publish(task, input, ExportName.base(job.info.title, job.name, ""), video == null, progress, sourceExt)
         }
         val ext = when (format) {
             LocalFormat.ORIGINAL -> when {
@@ -487,8 +505,8 @@ class Backend(context: Context) {
                 progress(stage, (us / 10.0 / length).toInt().coerceIn(0, 99))
             }
         }
-        publish(task, out, job.info.title, video == null, progress,
-            range = if (clipped) clipLabel(job.startMs, job.endMs) else "")
+        publish(task, out, ExportName.base(job.info.title, job.name,
+            if (clipped) clipLabel(job.startMs, job.endMs) else ""), video == null, progress)
     }
 
     private fun process(task: Task, dir: File, input: File, job: JobSpec, progress: (String, Int?) -> Unit): File {
@@ -556,8 +574,9 @@ class Backend(context: Context) {
         return out
     }
 
-    private fun publish(task: Task, file: File, title: String, audioOnly: Boolean, progress: (String, Int?) -> Unit,
-                        extension: String = file.extension, range: String = ""): Uri {
+    /** [name] is the final base name from [ExportName.base]. */
+    private fun publish(task: Task, file: File, name: String, audioOnly: Boolean, progress: (String, Int?) -> Unit,
+                        extension: String = file.extension): Uri {
         task.check()
         val size = file.length()
         check(size > 0) { "The output file is empty." }
@@ -570,10 +589,8 @@ class Backend(context: Context) {
             "opus", "ogg" -> "$type/ogg"
             else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
         }
-        val name = title.replace(Regex("""[\p{Cntrl}/\\:*?"<>|]"""), "_")
-            .trim(' ', '.').take(55).trimEnd { it.isHighSurrogate() }.ifBlank { "Media" }
         val values = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "$name$range.$ext")
+            put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.$ext")
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
