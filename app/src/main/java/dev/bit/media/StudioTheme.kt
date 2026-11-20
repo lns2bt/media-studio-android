@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 
 private val Light = lightColorScheme(
@@ -48,9 +49,19 @@ internal val AudioSymbol = symbol("Audio", "M12,3v10.55c-0.59,-0.34 -1.27,-0.55 
 internal val VideoSymbol = symbol("Video", "M17,10.5V7c0,-0.55 -0.45,-1 -1,-1H4c-0.55,0 -1,0.45 -1,1v10c0,0.55 0.45,1 1,1h12c0.55,0 1,-0.45 1,-1v-3.5l4,4v-11l-4,4z")
 internal val EditSymbol = symbol("Edit", "M3,17.25V21h3.75L17.81,9.94l-3.75,-3.75L3,17.25zM20.71,7.04c0.39,-0.39 0.39,-1.02 0,-1.41l-2.34,-2.34c-0.39,-0.39 -1.02,-0.39 -1.41,0l-1.83,1.83 3.75,3.75 1.83,-1.83z")
 internal val CloseSymbol = symbol("Close", "M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z")
-private val Convert = symbol("Convert", "M4,6h12V3l5,4l-5,4V8H4z M20,18H8v3l-5,-4l5,-4v3h12z")
 
 @Composable
 internal fun DestinationIcon(destination: Destination) {
-    Icon(if (destination == Destination.Extractor) Extract else Convert, contentDescription = null)
+    Icon(if (destination == Destination.Extractor) Extract else BrandMark, contentDescription = null)
+}
+
+/** The app name with its mark, above each screen's title. */
+@Composable
+internal fun StudioLabel() {
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+        Icon(BrandMark, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+            modifier = androidx.compose.ui.Modifier.size(18.dp))
+        Text("Media Studio", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    }
 }

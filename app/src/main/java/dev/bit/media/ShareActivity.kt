@@ -107,7 +107,7 @@ private fun ShareSheet(form: MediaForm, onMore: () -> Unit, onClose: () -> Unit)
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheet) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Media Studio", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            StudioLabel()
             SourceHeader(form)
             if (linkStart != null && (duration == null || linkStart < duration)) {
                 FilterChip(useLinkStart, { useLinkStart = !useLinkStart },

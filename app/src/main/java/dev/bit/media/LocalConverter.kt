@@ -232,6 +232,7 @@ fun LocalConverter() {
                 if (info == null) {
                     Text("Source file", style = MaterialTheme.typography.titleMedium)
                     Text("Choose an audio or video file to trim or convert.", style = MaterialTheme.typography.bodyMedium)
+                    if (model.uri == null) TrimIllustration(fromLink = false)
                 } else {
                     Text("${if (info.video) "Video" else "Audio"}  •  ${LocalTime.format(info.durationMs)}",
                         style = MaterialTheme.typography.bodyMedium)

@@ -401,8 +401,7 @@ private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit
                              .verticalScroll(scroll).padding(horizontal = if (rail) 32.dp else 16.dp)
                             .padding(top = 24.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Media Studio", style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary)
+                                StudioLabel()
                                 Text(current.name, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineLarge)
                                 Hint(if (current == Destination.Extractor) "Save video or audio from a link."
                                     else "Change the format of a file on your device.")
@@ -478,7 +477,10 @@ private fun Extractor(context: Context, form: MediaForm) {
                 if (!info.video && !info.audio) Text("No downloadable tracks found.")
             }
             form.url.isNotBlank() -> Text("Enter a complete HTTP or HTTPS link.")
-            else -> Hint("You can also share a link directly to Media Studio.")
+            else -> {
+                TrimIllustration(fromLink = true)
+                Hint("Paste a link, or share one to Media Studio from any app.")
+            }
         }
     }
     StudioSection("Time range") {

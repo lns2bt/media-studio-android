@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 16 76 76" width="256" height="256">
+<g transform="translate(0,0) scale(1)">
+<defs>
+  <linearGradient id="ibg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#23866F"/><stop offset=".55" stop-color="#186B59"/><stop offset="1" stop-color="#0B2E2B"/>
+  </linearGradient>
+  <radialGradient id="iglow" cx="54" cy="50" r="46" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="#A7F3D0" stop-opacity=".2"/><stop offset="1" stop-color="#A7F3D0" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+<rect x="16" y="16" width="76" height="76" rx="22" fill="url(#ibg)"/>
+<rect x="16" y="16" width="76" height="76" rx="22" fill="url(#iglow)"/>
+<g transform="translate(54,54) scale(0.8) translate(-54,-54)">
+<rect x="36.0" y="32.0" width="36.0" height="44.0" rx="5" fill="#A7F3D0" fill-opacity=".14"/>
+<line x1="26" y1="49" x2="26" y2="59" stroke="#A7F3D0" stroke-opacity="0.5" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="33" y1="45.5" x2="33" y2="62.5" stroke="#A7F3D0" stroke-opacity="0.5" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="40" y1="42.5" x2="40" y2="65.5" stroke="#FFFFFF" stroke-opacity="1" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="47" y1="35.5" x2="47" y2="72.5" stroke="#FFFFFF" stroke-opacity="1" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="54" y1="40.5" x2="54" y2="67.5" stroke="#FFFFFF" stroke-opacity="1" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="61" y1="37.5" x2="61" y2="70.5" stroke="#FFFFFF" stroke-opacity="1" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="68" y1="44.5" x2="68" y2="63.5" stroke="#FFFFFF" stroke-opacity="1" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="75" y1="46.5" x2="75" y2="61.5" stroke="#A7F3D0" stroke-opacity="0.5" stroke-width="4.6" stroke-linecap="round"/>
+<line x1="82" y1="49.5" x2="82" y2="58.5" stroke="#A7F3D0" stroke-opacity="0.5" stroke-width="4.6" stroke-linecap="round"/>
+<path d="M41.5,32.0 H36.0 V76.0 H41.5 M66.5,32.0 H72.0 V76.0 H66.5" fill="none" stroke="#A7F3D0" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+</g></g>
+</svg>

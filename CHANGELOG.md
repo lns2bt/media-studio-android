@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New look: a launcher icon that shows a waveform cut by two trim brackets, with a themed (monochrome) variant for Android 13+, matching notification and shortcut icons, and the mark next to the app name.
+- Empty Extractor and Converter screens show a small animated picture of what they do. It follows the system colours and stays still when animations are turned off.
 - Security: FFmpeg reads downloaded media with the same restrictions as picked files (local file protocol, known media formats only), so a download disguised as a playlist cannot make it read other files or addresses.
 - Links shared inside a sentence work: trailing punctuation and closing brackets are dropped, and `HTTPS://` links are accepted.
 - Changing or clearing the link stops the previous metadata read and its yt-dlp process instead of letting it run in the background.

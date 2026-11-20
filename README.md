@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.svg">
+  <img src="docs/images/banner-light.svg" width="100%" alt="Media Studio for Android: a waveform with the selected clip between two trim brackets">
+</picture>
+
 # Media Studio for Android
 
 **Turn a shared link or a local recording into just the clip you want.** Drag two markers, listen to the cut, and save the result to Downloads. Media Studio runs yt-dlp and FFmpeg on your phone.
@@ -9,7 +14,7 @@
 
 **[Download the ARM64 APK](https://github.com/lns2bt/media-studio-android/releases/download/v0.3/media-studio-v0.3-arm64-debug.apk)** · [User guide](docs/GUIDE.md) · [Release notes](CHANGELOG.md)
 
-| Extractor · start with a link | Converter · start with a file |
+| <img src="docs/images/feature-extractor.svg" width="40" align="left" alt=""> **Extractor**<br>start with a link | <img src="docs/images/feature-converter.svg" width="40" align="left" alt=""> **Converter**<br>start with a file |
 | --- | --- |
 | Share a URL from another app. Read its duration, enter a time range, and choose video with sound, silent video, or audio only. | Open a file from Android's Files app. Hear the audio and trim on its waveform, even when the source is a video. |
 | Keep the original codecs or convert to MP4 or MP3. If a source cannot deliver a usable excerpt, opt into downloading it in full and trimming locally. | Refine either boundary in **0.1-second steps**. Audition the first or last two seconds to avoid clipping a word or including a breath. |
@@ -45,9 +50,15 @@ For an x86_64 emulator, add `-PmediaAbi=x86_64` to the Gradle command.
 
 ### How it works
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/pipeline-dark.svg">
+  <img src="docs/images/pipeline-light.svg" width="100%" alt="A shared link goes through yt-dlp, a local file comes from the phone; FFmpeg trims and converts on the device, and the result lands in Downloads.">
+</picture>
+
 The Kotlin / Jetpack Compose app handles Android sharing, document access and waveform editing. [yt-dlp](https://github.com/yt-dlp/yt-dlp) selects and downloads streams; [FFmpeg](https://ffmpeg.org/) processes them locally via [youtubedl-android](https://github.com/yausername/youtubedl-android). Exports use Android's MediaStore and can continue in the background. Link availability and partial-transfer support depend on the provider; no account or hosted conversion service is required.
 
 - [User guide and format choices](docs/GUIDE.md)
 - [Device checks and export verification](DEVICE_CHECKS.md)
 - [Third-party components and sources](docs/THIRD_PARTY.md)
+- Icons and artwork come from one script: `python3 tools/brand.py` regenerates the launcher, notification and shortcut icons and the images on this page.
 - [GPL-3.0-only license](LICENSE)
