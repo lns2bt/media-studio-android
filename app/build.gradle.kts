@@ -14,8 +14,8 @@ android {
         applicationId = "dev.bit.media"
         minSdk = 29
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.4"
+        versionCode = 10
+        versionName = "0.5"
         ndk { abiFilters += providers.gradleProperty("mediaAbi").getOrElse("arm64-v8a") }
     }
 

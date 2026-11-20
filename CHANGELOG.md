@@ -1,9 +1,13 @@
 # Releases
 
-## Unreleased
+## v0.5 — GIFs, WebP and frames at the markers
+
+Android's internal version code is now 10, so earlier installations update in place.
 
 - Converter exports video selections as **GIF** or **animated WebP**. Choose the longest side (320, 480 or 720 px) and the frame rate (10, 15 or 24 fps). GIFs use one optimized palette for the whole clip; WebP is smaller and keeps more colour. Long selections get a size hint.
 - For videos, Converter shows the frames at the start and end markers above the timeline. They update when a marker settles; tap one to fine-tune that marker.
+
+**Artifact:** ARM64 debug APK, Android 10+. The release also includes its SHA-256 checksum.
 
 ## v0.4 — New look and safer downloads
 
