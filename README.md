@@ -7,7 +7,7 @@
 ![Android 10 or newer](https://img.shields.io/badge/Android-10%2B-186B59)
 [![GPL v3](https://img.shields.io/badge/license-GPLv3-405F89)](LICENSE)
 
-**[Download the ARM64 APK](https://github.com/lns2bt/media-studio-android/releases/download/v0.2/media-studio-v0.2-arm64-debug.apk)** · [User guide](docs/GUIDE.md) · [Release notes](CHANGELOG.md)
+**[Download the ARM64 APK](https://github.com/lns2bt/media-studio-android/releases/download/v0.3/media-studio-v0.3-arm64-debug.apk)** · [User guide](docs/GUIDE.md) · [Release notes](CHANGELOG.md)
 
 | Extractor · start with a link | Converter · start with a file |
 | --- | --- |
@@ -30,7 +30,7 @@ For video exports, choose **H.264 / MP4** or **VP9 / WebM**. **Keep original** a
 
 ### Install or build
 
-The [latest release](https://github.com/lns2bt/media-studio-android/releases/tag/v0.2) is a **debug-signed** APK for ARM64 devices running Android 10 or later. Development and device testing have focused on the Pixel 8a. Download the APK and open it on your phone, or install via `adb install -r media-studio-v0.2-arm64-debug.apk`.
+The [latest release](https://github.com/lns2bt/media-studio-android/releases/tag/v0.3) is a **debug-signed** APK for ARM64 devices running Android 10 or later. Development and device testing have focused on the Pixel 8a. Download the APK and open it on your phone, or install via `adb install -r media-studio-v0.3-arm64-debug.apk`.
 
 To build from source, use JDK 17 or 21 and Android SDK 36:
 
