@@ -150,6 +150,7 @@ internal fun LocalPreview(model: LocalConverterModel, info: LocalInfo) {
         if (it != boundary && player.auditioning) player.stop()
         boundary = it
     }
+    if (info.video) MarkerFrames(uri, info.durationMs, model.start, model.end, boundary, select)
     LocalTimeline(info.durationMs, model.start, model.end, model.wave,
         position, boundary, select, model::move)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

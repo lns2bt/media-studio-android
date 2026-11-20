@@ -48,6 +48,8 @@ class LocalConverterModel(application: Application) : AndroidViewModel(applicati
         private set
     /** File name chosen by the user; null derives it from the title. */
     var name by mutableStateOf<String?>(null)
+    /** GIF and WebP settings; kept across files like other preferences. */
+    var motion by mutableStateOf(Motion())
     private var backend: Backend? = null
     private var request: Job? = null
     private var generation = 0L
@@ -196,6 +198,8 @@ class LocalConverterModel(application: Application) : AndroidViewModel(applicati
             LocalFormat.FLAC -> ".flac"
             LocalFormat.H264 -> ".mp4"
             LocalFormat.VP9 -> ".webm"
+            LocalFormat.GIF -> ".gif"
+            LocalFormat.WEBP -> ".webp"
         }
         return ExportName.base(media.title, name, if (clipped) clipLabel(start, end) else "") + ext
     }
@@ -204,7 +208,7 @@ class LocalConverterModel(application: Application) : AndroidViewModel(applicati
         val source = uri ?: return null
         val media = info ?: return null
         if (rangeError != null) return null
-        return LocalJob(source, media, start, end, format, audioOnly, name)
+        return LocalJob(source, media, start, end, format, audioOnly, name, motion)
     }
 
     override fun onCleared() {
@@ -299,6 +303,7 @@ fun LocalConverter() {
                         }
                     }
                     LocalFormatMenu(model)
+                    if (model.format.animated) AnimatedOptions(model)
                     if (info.video && model.format == LocalFormat.ORIGINAL &&
                         (model.start > 0 || model.end < info.durationMs))
                         Text("Original video cuts can begin at a nearby keyframe. Choose a video codec for a precise cut.",
@@ -326,6 +331,8 @@ private fun LocalFormatMenu(model: LocalConverterModel) {
         LocalFormat.ORIGINAL -> "Keep original codec"
         LocalFormat.H264 -> "H.264 · MP4"
         LocalFormat.VP9 -> "VP9 · WebM"
+        LocalFormat.GIF -> "GIF · animated image"
+        LocalFormat.WEBP -> "WebP · animated image"
         LocalFormat.AAC -> "AAC · M4A"
         LocalFormat.OPUS -> "Opus · Ogg"
         else -> value.name
@@ -341,4 +348,29 @@ private fun LocalFormatMenu(model: LocalConverterModel) {
             }
         }
     }
+}
+
+/** Size and frame rate for GIF and WebP, with a hint about how quickly animated images grow. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AnimatedOptions(model: LocalConverterModel) {
+    val motion = model.motion
+    Text("Longest side", style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Motion.SIZES.forEach { size ->
+            FilterChip(motion.size == size, { model.motion = motion.copy(size = size) }, label = { Text("$size px") })
+        }
+    }
+    Text("Frame rate", style = MaterialTheme.typography.labelLarge)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Motion.RATES.forEach { fps ->
+            FilterChip(motion.fps == fps, { model.motion = motion.copy(fps = fps) }, label = { Text("$fps fps") })
+        }
+    }
+    val long = model.rangeError == null && model.end - model.start > AnimatedImage.LONG_CLIP_MS
+    Text(if (long) "Animated images grow with every frame. For chats, keep it under about 10 seconds."
+        else if (model.format == LocalFormat.WEBP) "WebP is smaller and more colourful than GIF; GIF works everywhere."
+        else "Plays in a loop without sound. GIF works in nearly every app.",
+        style = MaterialTheme.typography.bodySmall,
+        color = if (long) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
 }

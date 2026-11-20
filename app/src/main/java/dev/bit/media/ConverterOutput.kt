@@ -7,6 +7,6 @@ internal class ConverterOutput(videoSource: Boolean, audioOnly: Boolean) {
     val formats = buildList {
         if (!extracting) add(LocalFormat.ORIGINAL)
         if (audioOnly || !videoSource) addAll(listOf(LocalFormat.MP3, LocalFormat.AAC, LocalFormat.OPUS, LocalFormat.FLAC))
-        else addAll(listOf(LocalFormat.H264, LocalFormat.VP9))
+        else addAll(listOf(LocalFormat.H264, LocalFormat.VP9, LocalFormat.GIF, LocalFormat.WEBP))
     }
 }

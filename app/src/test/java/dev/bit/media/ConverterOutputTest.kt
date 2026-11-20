@@ -18,5 +18,12 @@ class ConverterOutputTest {
         assertEquals(LocalFormat.ORIGINAL, opened.default)
         assertTrue(opened.formats.containsAll(listOf(opened.default, LocalFormat.AAC, LocalFormat.OPUS)))
         assertFalse(LocalFormat.H264 in opened.formats)
+        assertTrue(opened.formats.none { it.animated })
+    }
+
+    @Test fun videoSourcesOfferAnimatedImages() {
+        val video = ConverterOutput(videoSource = true, audioOnly = false)
+        assertTrue(video.formats.containsAll(listOf(LocalFormat.GIF, LocalFormat.WEBP)))
+        assertTrue(ConverterOutput(videoSource = true, audioOnly = true).formats.none { it.animated })
     }
 }

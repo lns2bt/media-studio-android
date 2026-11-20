@@ -196,7 +196,8 @@ private fun ExportCardContent(context: Context, uri: Uri, onEdit: (Uri) -> Unit)
                             }, enabled = !busy) { Text(if (share) "Share" else "Open") }
                         }
                     }
-                    FilledTonalButton(onClick = {
+                    // GIF and WebP exports are images; the converter edits audio and video only.
+                    if (!current.mime.startsWith("image/")) FilledTonalButton(onClick = {
                         runAction {
                             accept(withContext(Dispatchers.IO) { resolver.exportRow(uri) })
                             onEdit(uri)

@@ -45,6 +45,8 @@ class DownloadService : Service() {
                 putExtra("startMs", job.startMs)
                 putExtra("endMs", job.endMs)
                 putExtra("name", job.name)
+                putExtra("motionSize", job.motion.size)
+                putExtra("motionFps", job.motion.fps)
             })
         }
         fun start(context: Context, job: JobSpec) {
@@ -122,7 +124,8 @@ class DownloadService : Service() {
                 intent.getBooleanExtra("video", false), intent.getBooleanExtra("audio", false)),
                 intent.getLongExtra("startMs", 0), intent.getLongExtra("endMs", 0),
                 LocalFormat.valueOf(requireNotNull(intent.getStringExtra("format"))), intent.getBooleanExtra("audioOnly", false),
-                intent.getStringExtra("name"))
+                intent.getStringExtra("name"), Motion(intent.getIntExtra("motionSize", Motion().size),
+                    intent.getIntExtra("motionFps", Motion().fps)))
         }
         val job = intent.getStringExtra("url")?.let { url -> JobSpec(url, Info(title, intent.getIntExtra("duration", -1).takeIf { it >= 0 },
             intent.getBooleanExtra("video", false), intent.getBooleanExtra("audio", false)),
@@ -242,14 +245,16 @@ class DownloadService : Service() {
         val edit = Intent(this, MainActivity::class.java).setAction(Intent.ACTION_VIEW).setDataAndType(uri, mime)
             .putExtra(FROM_RESULT, true).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val details = if (size > 0) "Saved to Downloads · ${Formatter.formatShortFileSize(this, size)}" else "Saved to Downloads"
-        return Notification.Builder(this, resultChannel())
+        val builder = Notification.Builder(this, resultChannel())
             .setSmallIcon(R.drawable.ic_stat_done).setLargeIcon(art)
             .setContentTitle(name).setContentText(details)
             .setContentIntent(openApp()).setAutoCancel(true)
             .addAction(Notification.Action.Builder(null, "Open", PendingIntent.getActivity(this, 10, view, flags)).build())
             .addAction(Notification.Action.Builder(null, "Share", PendingIntent.getActivity(this, 11, send, flags)).build())
-            .addAction(Notification.Action.Builder(null, "Edit", PendingIntent.getActivity(this, 12, edit, flags)).build())
-            .build()
+        // GIF and WebP exports are images; the converter edits audio and video only.
+        if (!mime.startsWith("image/"))
+            builder.addAction(Notification.Action.Builder(null, "Edit", PendingIntent.getActivity(this, 12, edit, flags)).build())
+        return builder.build()
     }
 
     private fun failed(reason: String): Notification {

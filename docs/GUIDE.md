@@ -21,6 +21,8 @@ Source formats and stream layouts vary. A section download can still transfer mo
 ### File-to-file workflow
 
 - Open or share an audio or video file from Android's Files app to send it directly to Converter. Shared web links still open Extractor.
+- For videos, the frames at the start and end markers appear above the timeline, so you can see where the cut lands. Tap a frame to fine-tune that marker.
+- To make a GIF or animated WebP, open a video, select a few seconds and choose **GIF** or **WebP** in the format menu. Pick the longest side and the frame rate; the result loops without sound. WebP files are usually smaller and more colourful, GIF plays almost everywhere.
 - Tap a trim boundary to refine it. Step the selection in tenths of a second and audition just the start or the end of the clip.
 - After an export, rename the file in Downloads, share it, or choose **Continue editing** to open the result as a new converter source. Excerpts include their selected time range in the suggested filename.
 - Long-press the app icon for shortcuts to paste a link or pick a local file.

@@ -471,13 +471,14 @@ class Backend(context: Context) {
         require(job.endMs <= tracks.duration) { "The media duration changed. Select the file again." }
         val format = job.format
         val video = when (format) {
-            LocalFormat.H264, LocalFormat.VP9 -> requireNotNull(tracks.video?.takeUnless { job.audioOnly }) {
+            LocalFormat.H264, LocalFormat.VP9, LocalFormat.GIF, LocalFormat.WEBP -> requireNotNull(tracks.video?.takeUnless { job.audioOnly }) {
                 "Select a video track for this format."
             }
             LocalFormat.ORIGINAL -> tracks.video?.takeUnless { job.audioOnly }
             else -> null
         }
-        val audio = tracks.audio
+        // Animated images have no sound.
+        val audio = tracks.audio?.takeUnless { format.animated }
         require(video != null || audio != null) { "No audio track was found." }
         val ac = audio?.optString("codec_name")
         val clipped = job.startMs != 0L || job.endMs != tracks.duration
@@ -503,6 +504,7 @@ class Backend(context: Context) {
             LocalFormat.FLAC -> "flac"
             LocalFormat.H264 -> "mp4"
             LocalFormat.VP9 -> "webm"
+            LocalFormat.GIF, LocalFormat.WEBP -> AnimatedImage.extension(format)
         }
         val stage = if (format == LocalFormat.ORIGINAL) if (clipped) "Trimming original tracks" else "Copying tracks"
             else "Encoding ${format.name}"
@@ -520,6 +522,7 @@ class Backend(context: Context) {
                     "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p")
                 LocalFormat.VP9 -> listOf("-c:v", "libvpx-vp9", "-row-mt", "1", "-cpu-used", "5",
                     "-crf", "33", "-b:v", "0", "-pix_fmt", "yuv420p")
+                LocalFormat.GIF, LocalFormat.WEBP -> AnimatedImage.outputArgs(format, job.motion)
                 else -> listOf("-c:v", "copy")
             }
         }
@@ -531,6 +534,7 @@ class Backend(context: Context) {
                 LocalFormat.AAC, LocalFormat.H264 -> listOf("-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "192k")
                 LocalFormat.OPUS, LocalFormat.VP9 -> listOf("-c:a", "libopus", "-ac", "2", "-ar", "48000", "-b:a", "128k")
                 LocalFormat.FLAC -> listOf("-c:a", "flac")
+                LocalFormat.GIF, LocalFormat.WEBP -> error("Animated images have no audio")
             }
         }
         args += listOf("-map_chapters", "-1")
