@@ -15,8 +15,20 @@ internal data class ExportName(val base: String, val suffix: String) {
          */
         fun base(title: String, name: String?, range: String): String {
             val clean = { text: String -> text.replace(Regex("""[\p{Cntrl}/\\:*?"<>|]"""), "_").trim(' ', '.') }
-            if (name != null) return clean(name).ifBlank { "Media" }
-            return clean(title).take(55).trimEnd { it.isHighSurrogate() }.ifBlank { "Media" } + range
+            val base = if (name != null) clean(name).ifBlank { "Media" }
+                else clean(title).take(55).trimEnd { it.isHighSurrogate() }.ifBlank { "Media" } + range
+            return fit(base, MAX_BASE_BYTES).trimEnd(' ', '.').ifBlank { "Media" }
+        }
+
+        /** Room for the longest extension we write (".webm") within Android's 255-byte name limit. */
+        const val MAX_BASE_BYTES = 250
+        /** A name whose [problem] check leaves room for any export extension. */
+        val NEW_EXPORT = ExportName("", ".webm")
+
+        private fun fit(text: String, bytes: Int): String {
+            var end = text.length
+            while (end > 0 && text.substring(0, end).toByteArray().size > bytes) end = text.offsetByCodePoints(end, -1)
+            return text.substring(0, end)
         }
     }
 

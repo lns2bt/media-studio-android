@@ -1,5 +1,14 @@
 # Releases
 
+## Unreleased
+
+- Security: FFmpeg reads downloaded media with the same restrictions as picked files (local file protocol, known media formats only), so a download disguised as a playlist cannot make it read other files or addresses.
+- Links shared inside a sentence work: trailing punctuation and closing brackets are dropped, and `HTTPS://` links are accepted.
+- Changing or clearing the link stops the previous metadata read and its yt-dlp process instead of letting it run in the background.
+- Very long custom file names are shortened to fit Android's limit instead of failing when the file is saved.
+- Starting an export while another one runs now says so instead of doing nothing.
+- Malformed data shared by another app no longer crashes Media Studio.
+
 ## v0.3 — yt-dlp updates and clearer errors
 
 Android's internal version code is now 8, so earlier installations update in place.

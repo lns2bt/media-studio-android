@@ -45,7 +45,7 @@ class ShareActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) {
-            val link = firstLink(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty())
+            val link = firstLink(intent.sharedText())
             if (link == null) {
                 Toast.makeText(this, "No web link found in the shared text.", Toast.LENGTH_SHORT).show()
                 finish()
@@ -119,13 +119,13 @@ private fun ShareSheet(form: MediaForm, onMore: () -> Unit, onClose: () -> Unit)
                 val videoMode = if (info?.audio == false) Mode.VIDEO else Mode.BOTH
                 PresetTile(AudioSymbol, "Audio", listOfNotNull("MP3", size(audioMode, null)).joinToString(" · "),
                     highlighted = last == Preset.AUDIO, enabled = ready && audioMode.available(info)) {
-                    info?.let { start(Preset.AUDIO, JobSpec(form.url.trim(), it, audioMode, true, start, null)) }
+                    info?.let { start(Preset.AUDIO, JobSpec(normalizeLink(form.url), it, audioMode, true, start, null)) }
                 }
                 val shown = info?.qualities?.firstOrNull { it <= (cap ?: Int.MAX_VALUE) }
                 PresetTile(VideoSymbol, "Video", listOfNotNull(shown?.let { "${it}p" } ?: "Best",
                     size(videoMode, cap)).joinToString(" · "),
                     highlighted = last == Preset.VIDEO, enabled = ready && videoMode.available(info)) {
-                    info?.let { start(Preset.VIDEO, JobSpec(form.url.trim(), it, videoMode, false, start, null, height = cap)) }
+                    info?.let { start(Preset.VIDEO, JobSpec(normalizeLink(form.url), it, videoMode, false, start, null, height = cap)) }
                 }
             }
             if (status.running) Hint("Another export is running (${status.stage.lowercase()}). Start this one when it has finished.")

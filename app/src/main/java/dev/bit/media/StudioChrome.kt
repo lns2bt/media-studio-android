@@ -108,7 +108,7 @@ internal fun EditableTitle(title: String, custom: String?, preview: String,
     var field by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(initial, TextRange(0, initial.length)))
     }
-    val problem = ExportName.split("").problem(field.text)
+    val problem = ExportName.NEW_EXPORT.problem(field.text)
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     LaunchedEffect(Unit) { focus.requestFocus() }

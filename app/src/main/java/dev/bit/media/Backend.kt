@@ -175,7 +175,7 @@ class Backend(context: Context) {
      */
     fun updateYtDlp(): Pair<Boolean, String?> {
         if (!engineLock.writeLock().tryLock(5, TimeUnit.SECONDS))
-            throw IOException("Wait until the current export has finished, then update yt-dlp.")
+            throw IOException("Media Studio is busy reading or exporting media. Try again when it has finished.")
         try {
             val before = work { task, dir -> ytDlpVersion(task, dir) }
             // The library compares the latest tag with its own record, which is empty for the bundled copy.
@@ -196,7 +196,7 @@ class Backend(context: Context) {
 
     private fun ytArgs(url: String, options: List<String>): List<String> {
         val uri = Uri.parse(url)
-        require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) { "Enter an HTTP or HTTPS media link." }
+        require(uri.scheme?.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()) { "Enter an HTTP or HTTPS media link." }
         return listOf(
             python, ytDlp,
             "--ignore-config", "--no-cache-dir", "--no-playlist", "--socket-timeout", "30",
@@ -552,8 +552,10 @@ class Backend(context: Context) {
 
     private fun process(task: Task, dir: File, input: File, job: JobSpec, progress: (String, Int?) -> Unit): File {
         val probe = StringBuilder()
-        command(task, dir, listOf(File(bin, "libffprobe.so").path, "-v", "error", "-show_streams",
-            "-of", "json", input.path)) { probe.appendLine(it) }
+        // The download is remote content: restrict FFmpeg to plain local media, as for picked
+        // files, so a playlist disguised as media cannot make it read local files or URLs.
+        command(task, dir, listOf(File(bin, "libffprobe.so").path, "-v", "error") + LOCAL_INPUT +
+            listOf("-show_streams", "-of", "json", input.path)) { probe.appendLine(it) }
         val streams = JSONObject(probe.toString()).getJSONArray("streams")
         val tracks = (0 until streams.length()).map { streams.getJSONObject(it) }
         val video = tracks.firstOrNull { it.optString("codec_type") == "video" &&
@@ -591,7 +593,7 @@ class Backend(context: Context) {
         val out = File(dir, "result.$ext")
         val args = mutableListOf(File(bin, "libffmpeg.so").path, "-nostdin", "-v", "error")
         if (job.localTrim && job.start > 0) args += listOf("-ss", job.start.toString())
-        args += listOf("-i", input.path)
+        args += LOCAL_INPUT + listOf("-i", input.path)
         if (job.localTrim && job.end != null) args += listOf("-t", (job.end - job.start).toString())
         if (v != null) {
             args += listOf("-map", "0:${v.getInt("index")}", "-c:v", if (encodeVideo) "libx264" else "copy")

@@ -48,4 +48,16 @@ class ExportBaseTest {
         org.junit.Assert.assertEquals(long, ExportName.base("Title", long, clipLabel(30_000, 60_000)))
         org.junit.Assert.assertEquals("My clip", ExportName.base("Title", " My clip ", " · 00m30s–end"))
     }
+
+    @org.junit.Test fun baseLeavesRoomForAnExtension() {
+        // 100 four-byte emoji would be 400 bytes; the base keeps whole code points within the limit.
+        val emoji = "\uD83C\uDFAC".repeat(100)
+        val base = ExportName.base("Title", emoji, "")
+        org.junit.Assert.assertTrue(base.toByteArray().size <= ExportName.MAX_BASE_BYTES)
+        org.junit.Assert.assertTrue((base + ".webm").toByteArray().size <= 255)
+        org.junit.Assert.assertFalse(base.last().isHighSurrogate())
+        org.junit.Assert.assertEquals(62, base.codePointCount(0, base.length))
+        org.junit.Assert.assertNotNull(ExportName.NEW_EXPORT.problem("x".repeat(251)))
+        org.junit.Assert.assertNull(ExportName.NEW_EXPORT.problem("x".repeat(250)))
+    }
 }

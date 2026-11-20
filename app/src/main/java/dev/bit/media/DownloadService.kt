@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.widget.Toast
 import java.util.concurrent.Executors
 
 class DownloadService : Service() {
@@ -109,6 +110,9 @@ class DownloadService : Service() {
         if (backend != null) {
             // A second start request (e.g. Retry) must still satisfy the foreground contract.
             startForeground(ID, notification(lastStage.ifBlank { "Starting" }, lastPercent), foregroundType)
+            // Only one export runs at a time; say so instead of dropping the request silently.
+            if (intent != null) Toast.makeText(this, "Another export is running. Start this one when it has finished.",
+                Toast.LENGTH_LONG).show()
             return START_NOT_STICKY
         }
         if (intent == null) { stopSelf(); return START_NOT_STICKY }

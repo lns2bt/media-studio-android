@@ -49,8 +49,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     private val form by lazy { ViewModelProvider(this)[MediaForm::class.java] }
@@ -115,7 +115,8 @@ class MainActivity : ComponentActivity() {
 
     private fun receive(intent: Intent, restoring: Boolean = false) {
         if (!restoring) pasteWhenFocused = false
-        if (intent.getBooleanExtra(DownloadService.FROM_RESULT, false))
+        // Extras come from other apps; a malformed bundle must not crash the activity.
+        if (runCatching { intent.getBooleanExtra(DownloadService.FROM_RESULT, false) }.getOrDefault(false))
             getSystemService(android.app.NotificationManager::class.java).cancel(DownloadService.DONE_ID)
         when (intent.action) {
             "dev.bit.media.OPEN_CONVERTER" -> form.destination = Destination.Converter
@@ -132,13 +133,14 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_VIEW, Intent.ACTION_SEND -> {
                 if (intent.action == Intent.ACTION_SEND && intent.type?.substringBefore(';') == "text/plain") {
                     form.destination = Destination.Extractor
-                    val link = firstLink(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty())
+                    val link = firstLink(intent.sharedText())
                     if (link != null) form.editUrl(link) else form.notify("No web link found in the shared text.")
                 } else {
-                    @Suppress("DEPRECATION")
-                    val uri = if (intent.action == Intent.ACTION_VIEW) intent.data else
+                    val uri = if (intent.action == Intent.ACTION_VIEW) intent.data else runCatching {
+                        @Suppress("DEPRECATION")
                         (intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri)
                             ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+                    }.getOrNull()
                     if (uri != null) openMedia(uri) else form.notify("No media file found.")
                 }
             }
@@ -146,20 +148,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** EXTRA_TEXT from another app, or empty when it is missing or cannot be read. */
+internal fun Intent.sharedText(): String =
+    runCatching { getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() }.getOrNull().orEmpty()
+
 private fun Context.pasteLink(form: MediaForm) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val item = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
     val link = firstLink((item?.text?.toString() ?: item?.uri?.toString()).orEmpty())
     if (link != null) form.editUrl(link) else form.notify("No web link found on the clipboard.")
 }
-
-internal fun firstLink(text: String): String? =
-    Regex("""https?://[^\s<>"]+""", RegexOption.IGNORE_CASE).find(text)?.value
-
-private fun validLink(text: String): Boolean = runCatching {
-    val uri = java.net.URI(text)
-    uri.scheme.lowercase(Locale.ROOT) in setOf("http", "https") && !uri.host.isNullOrBlank()
-}.getOrDefault(false)
 
 internal fun Mode.available(info: Info?): Boolean = when (this) {
     Mode.BOTH -> info?.video == true && info.audio
@@ -197,7 +195,7 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
     private var endEdited = false
     private var generation = 0L
     private var request: Job? = null
-    private val backend by lazy { Backend(getApplication<Application>()) }
+    private var reader: Backend? = null
     /** Short messages for the screen's snackbar, kept until the screen shows them. */
     internal val notices = Channel<String>(Channel.BUFFERED)
 
@@ -229,15 +227,18 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
 
     fun inspect() {
         val id = ++generation
-        request?.cancel()
-        val link = url.trim()
+        stopReading()
+        val link = normalizeLink(url)
         error = null
         loading = validLink(link)
         if (!loading) return
         request = viewModelScope.launch {
             try {
                 delay(450)
-                val result = withContext(Dispatchers.IO) { backend.inspect(link) }
+                // Each read gets its own engine so a superseded one can be stopped, not just ignored.
+                val backend = Backend(getApplication<Application>())
+                reader = backend
+                val result = runInterruptible(Dispatchers.IO) { backend.inspect(link) }
                 if (generation != id) return@launch
                 info = result
                 mode = Mode.values().firstOrNull { it.available(result) } ?: Mode.BOTH
@@ -258,6 +259,20 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Stops a metadata read in flight, including its yt-dlp process. */
+    private fun stopReading() {
+        request?.cancel()
+        request = null
+        reader?.cancel()
+        reader = null
+    }
+
+    override fun onCleared() {
+        ++generation
+        stopReading()
+        super.onCleared()
+    }
+
     internal val range get() = FormTime.range(from, until, info?.duration)
 
     internal class Snapshot(
@@ -271,7 +286,7 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
         val saved = Snapshot(url, info, thumbnail, error, loading, from, until, endEdited, mode, convert,
             localTrim, height, name, linkStart)
         ++generation
-        request?.cancel()
+        stopReading()
         url = ""
         info = null
         thumbnail = null
@@ -291,7 +306,7 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
 
     internal fun restore(saved: Snapshot) {
         ++generation
-        request?.cancel()
+        stopReading()
         url = saved.url
         info = saved.info
         thumbnail = saved.thumbnail
@@ -347,7 +362,7 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
         val source = info ?: return null
         val bounds = range as? FormRange.Valid ?: return null
         if (!mode.available(source)) return null
-        return JobSpec(url.trim(), source, mode, convert, bounds.start, bounds.end,
+        return JobSpec(normalizeLink(url), source, mode, convert, bounds.start, bounds.end,
             localTrim && (bounds.start > 0 || bounds.end != null), height.takeIf { mode != Mode.AUDIO }, name)
     }
 }
