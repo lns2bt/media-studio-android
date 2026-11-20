@@ -44,6 +44,8 @@ The debug build targets ARM64, including the Pixel 8a, and requires Android 10 o
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+To publish a release, raise `versionCode` and `versionName` in `app/build.gradle.kts`, add a `## vX.Y — Title` section to the [changelog](../CHANGELOG.md), push, then push the tag (`git tag vX.Y && git push origin vX.Y`). The Release workflow checks that the tag, version and changelog agree, runs the tests, verifies the signing certificate and publishes the APK with its checksum. Signing uses the debug keystore stored in the `DEBUG_KEYSTORE_BASE64` repository secret, so updates install over earlier versions.
+
 The [implementation plan](../IMPLEMENTATION_PLAN.md) contains the original architecture, format rules and device acceptance criteria. See [device checks](../DEVICE_CHECKS.md) for a reproducible first run.
 
 ## Backend projects

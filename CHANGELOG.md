@@ -1,6 +1,8 @@
 # Releases
 
-## Unreleased
+## v0.4 — New look and safer downloads
+
+Android's internal version code is now 9, so earlier installations update in place.
 
 - New look: a launcher icon that shows a waveform cut by two trim brackets, with a themed (monochrome) variant for Android 13+, matching notification and shortcut icons, and the mark next to the app name.
 - Empty Extractor and Converter screens show a small animated picture of what they do. It follows the system colours and stays still when animations are turned off.
@@ -10,6 +12,9 @@
 - Very long custom file names are shortened to fit Android's limit instead of failing when the file is saved.
 - Starting an export while another one runs now says so instead of doing nothing.
 - Malformed data shared by another app no longer crashes Media Studio.
+- Releases are built and published by GitHub Actions from a version tag, signed with the same key as before.
+
+**Artifact:** ARM64 debug APK, Android 10+. The release also includes its SHA-256 checksum.
 
 ## v0.3 — yt-dlp updates and clearer errors
 
