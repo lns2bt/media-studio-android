@@ -1,5 +1,12 @@
 # Releases
 
+## Unreleased
+
+- **Update yt-dlp** at the bottom of the page downloads the latest stable yt-dlp from GitHub when you tap it. Media Studio never checks or updates on its own. The version line shows the yt-dlp in use, and the update is unavailable while an export runs.
+- Failures are explained in plain words: private, removed, age-restricted, members-only or region-locked videos, unsupported sites, no connection, full storage, and site changes. **Details** shows the original message. Where a newer yt-dlp often helps, the message offers **Update yt-dlp**.
+- In-app messages appear as snackbars instead of toasts.
+- Before Android asks for notification permission, a short note explains what the notifications are for. **Not now** keeps the app from asking again.
+
 ## v0.2 — Share sheet, notifications and richer links
 
 Android's internal version code is now 7, so v0.1 installations update in place.

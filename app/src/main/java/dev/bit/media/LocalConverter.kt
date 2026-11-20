@@ -1,10 +1,7 @@
 package dev.bit.media
 
-import android.Manifest
 import android.app.Application
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -226,8 +223,8 @@ fun LocalConverter() {
         // The editor is session-scoped. The export service receives its own read grant.
         if (uri != null) model.open(uri)
     }
-    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    val undo = LocalUndo.current
+    val notificationPrompt = rememberNotificationPrompt()
+    val undo = LocalSnackbars.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val info = model.info
         ElevatedCard(Modifier.fillMaxWidth()) {
@@ -263,8 +260,9 @@ fun LocalConverter() {
                     Text(if (info == null) "Reading source…" else "Building waveform…")
                 }
                 model.error?.let { message ->
-                    Text(message, color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = { model.uri?.let(model::open) }) { Text("Try again") }
+                    ProblemNotice(Problems.explain(message)) {
+                        TextButton(onClick = { model.uri?.let(model::open) }) { Text("Try again") }
+                    }
                 }
             }
         }
@@ -310,10 +308,7 @@ fun LocalConverter() {
                 onClick = {
                     model.job()?.let { job ->
                         DownloadService.startLocal(context, job)
-                        if (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(
-                                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                            notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
+                        notificationPrompt {}
                     }
                 }) { Text("Export selection") }
         }

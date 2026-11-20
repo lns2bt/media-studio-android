@@ -168,7 +168,8 @@ class DownloadService : Service() {
                 backend = null
                 val status = result.fold(
                     { JobStatus("Saved to Downloads", uri = it) },
-                    { JobStatus(if (stopping) "Cancelled" else "Failed: ${it.localizedMessage ?: "Export failed"}") }
+                    { if (stopping) JobStatus("Cancelled")
+                      else JobStatus("Export failed", error = it.localizedMessage ?: "Export failed") }
                 )
                 Jobs.report(status)
                 releaseWakeLock()
@@ -248,10 +249,11 @@ class DownloadService : Service() {
     }
 
     private fun failed(reason: String): Notification {
+        val problem = Problems.explain(reason)
         val builder = Notification.Builder(this, resultChannel())
             .setSmallIcon(android.R.drawable.stat_notify_error).setLargeIcon(artwork)
             .setContentTitle(title.ifBlank { "Media Studio" }).setContentText("Export failed")
-            .setStyle(Notification.BigTextStyle().bigText("Export failed: $reason"))
+            .setStyle(Notification.BigTextStyle().bigText("Export failed. ${problem.message}"))
             .setContentIntent(openApp()).setAutoCancel(true)
         retry?.let {
             builder.addAction(Notification.Action.Builder(null, "Retry",

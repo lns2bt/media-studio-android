@@ -25,7 +25,9 @@ data class JobSpec(
 
 data class JobStatus(
     val stage: String = "Ready", val percent: Int? = null,
-    val running: Boolean = false, val uri: Uri? = null
+    val running: Boolean = false, val uri: Uri? = null,
+    /** The engine's error text when the export failed. */
+    val error: String? = null,
 )
 
 object Jobs {
@@ -42,7 +44,8 @@ object Jobs {
         } else {
             current.value = JobStatus(
                 store.getString("stage", "Ready") ?: "Ready",
-                uri = store.getString("uri", null)?.let(Uri::parse)
+                uri = store.getString("uri", null)?.let(Uri::parse),
+                error = store.getString("error", null),
             )
         }
     }
@@ -65,7 +68,8 @@ object Jobs {
         if (!status.running || !previous.running) {
             history.edit().putBoolean("active", status.running)
                 .putString("stage", if (status.running) null else status.stage)
-                .putString("uri", status.uri?.toString()).apply()
+                .putString("uri", status.uri?.toString())
+                .putString("error", if (status.running) null else status.error).apply()
         }
     }
 }

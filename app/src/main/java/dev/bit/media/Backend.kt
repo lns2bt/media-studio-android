@@ -19,6 +19,8 @@ import java.io.File
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.CancellationException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.pow
@@ -53,6 +55,15 @@ class Backend(context: Context) {
     }
 
     private fun <T> work(body: (Task, File) -> T): T {
+        engineLock.readLock().lock()
+        try {
+            return session(body)
+        } finally {
+            engineLock.readLock().unlock()
+        }
+    }
+
+    private fun <T> session(body: (Task, File) -> T): T {
         val task = Task()
         synchronized(active) { active.add(task) }
         val root = File(app.cacheDir, "media-extractor")
@@ -135,29 +146,59 @@ class Backend(context: Context) {
         }
     }
 
-    /** Versions of the bundled yt-dlp and FFmpeg, each null when it cannot be read. */
-    fun versions(): Pair<String?, String?> = work { task, dir ->
+    private val ytDlp get() = File(File(base, YoutubeDL.ytdlpDirName), YoutubeDL.ytdlpBin).path
+
+    private fun ytDlpVersion(task: Task, dir: File): String? {
         var yt: String? = null
-        var ff: String? = null
         runCatching {
-            command(task, dir, listOf(python, File(File(base, YoutubeDL.ytdlpDirName), YoutubeDL.ytdlpBin).path, "--version")) {
-                if (yt == null && it.isNotBlank()) yt = it.trim()
-            }
+            command(task, dir, listOf(python, ytDlp, "--version")) { if (yt == null && it.isNotBlank()) yt = it.trim() }
         }
+        return yt
+    }
+
+    /** Versions of the installed yt-dlp and FFmpeg, each null when it cannot be read. */
+    fun versions(): Pair<String?, String?> = work { task, dir ->
+        var ff: String? = null
         runCatching {
             command(task, dir, listOf(File(bin, "libffmpeg.so").path, "-version")) { line ->
                 if (ff == null && line.startsWith("ffmpeg version ")) ff = line.split(' ').getOrNull(2)
                     ?.let { if (it.length > 1 && it[0] == 'n' && it[1].isDigit()) it.drop(1) else it }
             }
         }
-        yt to ff
+        ytDlpVersion(task, dir) to ff
+    }
+
+    /**
+     * Replaces yt-dlp with its latest stable release from GitHub. Waits briefly for running
+     * work and refuses while an export holds the engine. Returns whether a new release was
+     * installed, and the version now in use.
+     */
+    fun updateYtDlp(): Pair<Boolean, String?> {
+        if (!engineLock.writeLock().tryLock(5, TimeUnit.SECONDS))
+            throw IOException("Wait until the current export has finished, then update yt-dlp.")
+        try {
+            val before = work { task, dir -> ytDlpVersion(task, dir) }
+            // The library compares the latest tag with its own record, which is empty for the bundled copy.
+            before?.let {
+                app.getSharedPreferences("youtubedl-android", Context.MODE_PRIVATE).edit().putString("dlpVersion", it).commit()
+            }
+            val status = try {
+                YoutubeDL.updateYoutubeDL(app)
+            } catch (e: Exception) {
+                throw IOException(e.cause?.localizedMessage ?: e.localizedMessage ?: "Could not download yt-dlp.", e)
+            }
+            val after = work { task, dir -> ytDlpVersion(task, dir) }
+            return (status == YoutubeDL.UpdateStatus.DONE) to (after ?: before)
+        } finally {
+            engineLock.writeLock().unlock()
+        }
     }
 
     private fun ytArgs(url: String, options: List<String>): List<String> {
         val uri = Uri.parse(url)
         require(uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) { "Enter an HTTP or HTTPS media link." }
         return listOf(
-            python, File(File(base, YoutubeDL.ytdlpDirName), YoutubeDL.ytdlpBin).path,
+            python, ytDlp,
             "--ignore-config", "--no-cache-dir", "--no-playlist", "--socket-timeout", "30",
             "--ffmpeg-location", File(bin, "libffmpeg.so").path,
             "--js-runtimes", "quickjs:${File(bin, "libqjs.so").path}"
@@ -639,6 +680,8 @@ class Backend(context: Context) {
         val LOCAL_INPUT = listOf("-protocol_whitelist", "file", "-format_whitelist",
             "mov,matroska,webm,mp3,aac,ogg,flac,wav,aiff,avi,asf,mpeg,mpegts,flv,amr,ac3,eac3,ape,wv,caf,3g2,3gp,m4a,mj2,mp4")
         val storageLock = Any()
+        /** Readers run yt-dlp or FFmpeg; the writer replaces yt-dlp. */
+        val engineLock = ReentrantReadWriteLock()
         val cleaned = mutableSetOf<String>()
         const val LAUNCHER = "import os,sys; os.setsid(); print('GROUP:'+str(os.getpid()),flush=True); os.execv(sys.argv[1],sys.argv[1:])"
     }

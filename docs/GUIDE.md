@@ -30,6 +30,8 @@ Source formats and stream layouts vary. A section download can still transfer mo
 - Tap the pencil next to the title in Extractor or Converter to choose the file name before exporting. **Saves as** shows the resulting name; a custom name replaces the automatic time-range label. The extension is added when saving.
 - Tap ✕ in the link field (Extractor) or **Reset** next to the file (Converter) to start over. The snackbar offers **Undo**. A running export continues; use its own **Cancel** button to stop it.
 - The bottom of the page shows the app, yt-dlp and FFmpeg versions. Tap it to open the releases page.
+- Sites change often, and a newer yt-dlp usually follows within days. Tap **Update yt-dlp** below the versions to install the latest stable release from GitHub. It runs only when you tap it and is unavailable while an export is running.
+- When something fails, Media Studio says why in plain words. **Details** shows the engine's original message; failures that a newer yt-dlp often fixes offer **Update yt-dlp** right there.
 
 Media Studio keeps a bounded cache of waveform peaks for recently opened, identifiable files. It reads the current file descriptor and matches the file's identity, size and timestamps before reusing the peaks. Streaming providers without a stable identity are scanned on each open. For device timing, use `adb logcat -s StudioWave:D` to compare an initial open with a repeat; messages include elapsed times, not filenames.
 

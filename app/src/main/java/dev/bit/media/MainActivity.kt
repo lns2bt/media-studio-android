@@ -5,15 +5,11 @@ import android.content.ClipboardManager
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.text.format.Formatter
 import androidx.compose.animation.Crossfade
@@ -50,6 +46,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -98,7 +95,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openMedia(uri: Uri) {
         if (uri.scheme != ContentResolver.SCHEME_CONTENT) {
-            message("Choose a shared audio or video file.")
+            form.notify("Choose a shared audio or video file.")
             return
         }
         form.destination = Destination.Converter
@@ -136,13 +133,13 @@ class MainActivity : ComponentActivity() {
                 if (intent.action == Intent.ACTION_SEND && intent.type?.substringBefore(';') == "text/plain") {
                     form.destination = Destination.Extractor
                     val link = firstLink(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString().orEmpty())
-                    if (link != null) form.editUrl(link) else message("No web link found in the shared text.")
+                    if (link != null) form.editUrl(link) else form.notify("No web link found in the shared text.")
                 } else {
                     @Suppress("DEPRECATION")
                     val uri = if (intent.action == Intent.ACTION_VIEW) intent.data else
                         (intent.getParcelableExtra<android.os.Parcelable>(Intent.EXTRA_STREAM) as? Uri)
                             ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
-                    if (uri != null) openMedia(uri) else message("No media file found.")
+                    if (uri != null) openMedia(uri) else form.notify("No media file found.")
                 }
             }
         }
@@ -153,7 +150,7 @@ private fun Context.pasteLink(form: MediaForm) {
     val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     val item = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
     val link = firstLink((item?.text?.toString() ?: item?.uri?.toString()).orEmpty())
-    if (link != null) form.editUrl(link) else message("No web link found on the clipboard.")
+    if (link != null) form.editUrl(link) else form.notify("No web link found on the clipboard.")
 }
 
 internal fun firstLink(text: String): String? =
@@ -201,6 +198,12 @@ class MediaForm(application: Application) : AndroidViewModel(application) {
     private var generation = 0L
     private var request: Job? = null
     private val backend by lazy { Backend(getApplication<Application>()) }
+    /** Short messages for the screen's snackbar, kept until the screen shows them. */
+    internal val notices = Channel<String>(Channel.BUFFERED)
+
+    fun notify(text: String) {
+        notices.trySend(text)
+    }
 
     fun editEnd(value: String) {
         endEdited = true
@@ -356,8 +359,9 @@ private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit
     val job by Jobs.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val undo = remember(snackbar, scope) { UndoHost(snackbar, scope) }
-    CompositionLocalProvider(LocalUndo provides undo) {
+    val undo = remember(snackbar, scope) { Snackbars(snackbar, scope) }
+    LaunchedEffect(form) { for (notice in form.notices) undo.show(notice) }
+    CompositionLocalProvider(LocalSnackbars provides undo) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val rail = maxWidth >= 600.dp && maxHeight >= 480.dp
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding()) {
@@ -423,10 +427,10 @@ private fun MediaScreen(context: Context, form: MediaForm, onEdit: (Uri) -> Unit
 @Composable
 private fun Extractor(context: Context, form: MediaForm) {
     val status by Jobs.state.collectAsStateWithLifecycle()
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val notificationPrompt = rememberNotificationPrompt()
     val info = form.info
     val rangeError = (form.range as? FormRange.Invalid)?.message
-    val undo = LocalUndo.current
+    val undo = LocalSnackbars.current
     StudioSection("Source") {
         OutlinedTextField(form.url, form::editUrl, Modifier.fillMaxWidth(), singleLine = true,
             label = { Text("Media link") }, placeholder = { Text("https://…") },
@@ -449,8 +453,10 @@ private fun Extractor(context: Context, form: MediaForm) {
                 StudioProgress(null)
             }
             form.error != null -> {
-                Text("Could not read metadata: ${form.error}", color = MaterialTheme.colorScheme.error)
-                OutlinedButton(onClick = form::inspect) { Text("Retry") }
+                Text("Could not read this link", style = MaterialTheme.typography.titleMedium)
+                ProblemNotice(Problems.explain(form.error), onUpdated = form::inspect) {
+                    OutlinedButton(onClick = form::inspect) { Text("Retry") }
+                }
             }
             info != null -> {
                 SourceSummary(form, info, form.thumbnail)
@@ -519,9 +525,7 @@ private fun Extractor(context: Context, form: MediaForm) {
         Button(modifier = Modifier.fillMaxWidth(), enabled = !status.running && form.spec() != null, onClick = {
             form.spec()?.let {
                 DownloadService.start(context, it)
-                if (Build.VERSION.SDK_INT >= 33 &&
-                    context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                ) notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                notificationPrompt {}
             }
         }) { Text("Start download") }
     }
@@ -575,6 +579,10 @@ private fun JobPanel(context: Context, onEdit: (Uri) -> Unit) {
             StudioProgress(status.percent)
             OutlinedButton(onClick = { DownloadService.cancel(context) }) { Text("Cancel") }
         }
+        status.error?.let { error ->
+            val snackbars = LocalSnackbars.current
+            ProblemNotice(Problems.explain(error), onUpdated = { snackbars.show("yt-dlp updated. Start the export again.") })
+        }
         status.uri?.let { uri -> ExportResultCard(context, uri, onEdit) }
     }
 }
@@ -603,4 +611,3 @@ private fun Choice(label: String, selected: Boolean, enabled: Boolean = true, cl
     }
 }
 
-private fun Context.message(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()

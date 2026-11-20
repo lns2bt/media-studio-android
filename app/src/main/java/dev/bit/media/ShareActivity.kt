@@ -1,18 +1,13 @@
 package dev.bit.media
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -82,7 +77,7 @@ private fun ShareSheet(form: MediaForm, onMore: () -> Unit, onClose: () -> Unit)
     val scope = rememberCoroutineScope()
     val status by Jobs.state.collectAsStateWithLifecycle()
     var useLinkStart by rememberSaveable { mutableStateOf(true) }
-    var pending by remember { mutableStateOf<JobSpec?>(null) }
+    val notificationPrompt = rememberNotificationPrompt()
 
     fun close(then: () -> Unit) {
         scope.launch { sheet.hide() }.invokeOnCompletion { then() }
@@ -92,20 +87,12 @@ private fun ShareSheet(form: MediaForm, onMore: () -> Unit, onClose: () -> Unit)
         Toast.makeText(context, "Download started. A notification appears when it's saved.", Toast.LENGTH_SHORT).show()
         close(onClose)
     }
-    // The sheet closes right away, so the notification is the only feedback: ask before the first start.
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        pending?.let(::launch)
-        pending = null
-    }
     fun start(preset: Preset, spec: JobSpec) {
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         prefs.edit().putString("preset", preset.name).apply()
         last = preset
-        if (Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            pending = spec
-            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else launch(spec)
+        // The sheet closes right away, so the notification is the only feedback: ask before the first start.
+        notificationPrompt { launch(spec) }
     }
 
     val info = form.info
@@ -168,10 +155,25 @@ private fun SourceHeader(form: MediaForm) {
                     Hint(listOfNotNull(info.uploader, info.duration?.let(FormTime::format)).joinToString("  •  "))
                 }
                 form.error != null -> {
+                    val problem = Problems.explain(form.error)
+                    val context = LocalContext.current
+                    val scope = rememberCoroutineScope()
+                    val updating by Engine.updating.collectAsStateWithLifecycle()
+                    var outcome by remember(form.error) { mutableStateOf<String?>(null) }
                     Text("Could not read this link", style = MaterialTheme.typography.titleMedium)
-                    Text(form.error.orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 4,
+                    Text(problem.message, style = MaterialTheme.typography.bodySmall, maxLines = 4,
                         overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = form::inspect) { Text("Retry") }
+                    outcome?.let { Hint(it) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = form::inspect) { Text("Retry") }
+                        if (problem.update) TextButton(enabled = !updating, onClick = {
+                            scope.launch {
+                                val result = Engine.updateYtDlp(context)
+                                outcome = result.message
+                                if (result.updated) form.inspect()
+                            }
+                        }) { Text(if (updating) "Updating…" else "Update yt-dlp") }
+                    }
                 }
                 else -> {
                     Text("Reading link…", style = MaterialTheme.typography.titleMedium)
