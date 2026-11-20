@@ -19,6 +19,11 @@ android {
         ndk { abiFilters += providers.gradleProperty("mediaAbi").getOrElse("arm64-v8a") }
     }
 
+    // Release builds in CI point DEBUG_KEYSTORE at the project's key so updates install in place.
+    providers.environmentVariable("DEBUG_KEYSTORE").orNull?.let { path ->
+        signingConfigs.getByName("debug") { storeFile = file(path) }
+    }
+
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
